@@ -154,7 +154,7 @@ agent can check. This is a sketch. The builder decides the final names:
 
 - project: `open`, `status`, `schema`
 - board: `set_outline`, `set_stackup`, `set_rules` (or `use_fab_preset`)
-- parts: `search_part` (LCSC and manufacturer), `add_part`,
+- parts: `search_parts` (all providers), `import_part`, `add_part`,
   `remove_part`, `footprint_from_package` (IPC-7351),
   `footprint_from_pads` (numbers typed from the datasheet), `fetch_model`
 - nets: `set_nets` (full netlist), `connect`, `disconnect`

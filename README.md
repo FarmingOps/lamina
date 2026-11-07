@@ -83,7 +83,7 @@ An agent usually calls the tools in this order:
 1. `open` with `create: true`
 2. `use_fab_preset`
 3. `set_outline`
-4. `import_lcsc` for each part
+4. `import_part` for each part
 5. `set_nets`
 6. `place_many`
 7. `autoroute`
@@ -236,21 +236,36 @@ The MCP tools are `repeat_layout`, `save_layout_block` and `place_layout_block`.
 viewer, select a part of a group. Then use *Select group*, *layout like* or *Copy layout
 to all like it*.
 
+## Providers
+
+Parts, footprints and 3D models come from providers. A part is named `provider:id`. The
+`providers` tool lists them with the id format of each. Lamina ships two:
+
+- `lcsc`: real parts from LCSC / JLCPCB, with stock, price, the vendor footprint and the
+  vendor 3D model. Example: `lcsc:C6186`.
+- `kicad`: generic footprints and package models from the KiCad libraries on this
+  computer, or from the official online libraries. Example:
+  `kicad:LED_SMD:LED_0603_1608Metric`, or the path of a `.kicad_mod` file.
+
+`search_parts` searches all providers or one. `import_part` and `import_parts` import by
+name and can add the part. `set_model` with `provider:id` puts a provider model on any
+footprint. A new provider is one type that implements `Provider` in `lamina-model`, plus
+one line in `Providers::standard`.
+
 ## Part library and offline work
 
 Each board keeps its own copy of every footprint and model in `cache/`. A clone of the
-board needs no network. New parts come from LCSC/EasyEDA or from the KiCad libraries, and
-each download also goes into the part library on your computer:
+board needs no network. Each download also goes into the part library on your computer:
 
 - `$LAMINA_LIB`, or `%LOCALAPPDATA%\lamina\lib` on Windows, or `~/.lamina/lib`.
 - The `lib` folders of a workspace are searched first. Put shared parts there and commit them.
 
-`import_lcsc`, `import_kicad_footprint` and `set_model` look in the project cache, then in
-the library, then online. `search_part` uses the library when LCSC does not answer. To work
+An import looks in the project cache, then in the library, then asks the provider.
+`search_parts` uses the library when a provider does not answer, and says so. To work
 without a network, fill the library first:
 
 ```
-lamina fetch C6186 C14663 --kicad LED_SMD:LED_0603_1608Metric
+lamina fetch lcsc:C6186 lcsc:C14663 kicad:LED_SMD:LED_0603_1608Metric
 lamina library
 ```
 
@@ -260,14 +275,10 @@ The `fetch_library` and `library` tools do the same from an agent.
 
 Lamina reads and writes KiCad files. You do not need KiCad.
 
-- `import_kicad_footprint` imports a footprint. Give `Library:Name` (for example
-  `Package_TO_SOT_SMD:SOT-23`), a name from a local library, or a `.kicad_mod` file.
-  Lamina finds local libraries through `kicad_footprints` in `lamina.json`,
-  `KICAD*_FOOTPRINT_DIR`, a KiCad install or the part library. If there is no local
-  library, Lamina downloads the footprint and its STEP model from the official KiCad
-  libraries and keeps a copy in the part library. `search_kicad_footprints` searches the
-  local libraries. `set_model` with `kicad:Library:Name` puts a generic KiCad model on any
-  footprint.
+- The `kicad` provider imports footprints (see Providers). Lamina finds local libraries
+  through `kicad_footprints` and `kicad_models` in `lamina.json`, `KICAD*_FOOTPRINT_DIR`
+  and `KICAD*_3DMODEL_DIR`, or a KiCad install. If there is no local library, it downloads
+  the footprint and its STEP model from the official KiCad libraries.
 - `import_kicad_board` and `lamina import-kicad <file> <dir>` import a `.kicad_pcb` from
   KiCad 6 to 10. Lamina imports the outline, footprints, parts, nets, placement, tracks,
   vias, zones, keep-outs and texts. The design rules and net classes come from the

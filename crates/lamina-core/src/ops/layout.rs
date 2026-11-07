@@ -11,10 +11,6 @@ use serde::{Deserialize, Serialize};
 use crate::project::{OpResult, Project, Touched};
 use crate::reuse::{self, Applied, ApplyOpts, Block, LayoutBlock};
 
-fn yes() -> bool {
-    true
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct RepeatLayout {
     /// The block whose layout is copied. This is a group name or a list of refdes.
@@ -34,7 +30,7 @@ pub struct RepeatLayout {
     pub at: Option<Placement>,
     /// Also copy the tracks and vias. They replace the old tracks and vias of
     /// the target (default true).
-    #[serde(default = "yes")]
+    #[serde(default = "super::yes")]
     pub routing: bool,
     /// Also move locked parts.
     #[serde(default)]
@@ -75,7 +71,7 @@ pub struct PlaceLayoutBlock {
     #[serde(default)]
     pub at: Option<Placement>,
     /// Also copy the tracks and vias (default true).
-    #[serde(default = "yes")]
+    #[serde(default = "super::yes")]
     pub routing: bool,
     #[serde(default)]
     pub force: bool,

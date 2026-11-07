@@ -102,14 +102,10 @@ pub struct AddParts {
 pub struct RemovePart {
     pub refdes: String,
     /// Also remove the pads of the part from the nets (default true).
-    #[serde(default = "yes")]
+    #[serde(default = "super::yes")]
     pub remove_from_nets: bool,
     #[serde(default)]
     pub strict: bool,
-}
-
-fn yes() -> bool {
-    true
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -236,7 +232,7 @@ impl Project {
         if !d.footprints.contains_key(&p.footprint) {
             return Err(Error::invalid(format!(
                 "The footprint `{}` does not exist. Create it first with \
-                 footprint_from_package, footprint_from_pads or import_lcsc.",
+                 footprint_from_package, footprint_from_pads or import_part.",
                 p.footprint
             )));
         }
@@ -315,9 +311,8 @@ pub struct SetModel {
     pub footprint: String,
     /// The model file (STEP or OBJ). Lamina copies a file with an absolute path
     /// into `cache/models/user/`. A relative path is relative to `cache/models/`.
-    /// `kicad:Library:Name` (for example `kicad:LED_SMD:LED_0603_1608Metric`)
-    /// takes the generic model of the KiCad libraries: local first, then the
-    /// part library, then online.
+    /// `provider:id` (for example `kicad:LED_SMD:LED_0603_1608Metric`) takes a
+    /// model from a provider: local files first, then online.
     pub file: String,
     /// The offset in mm. Lamina applies it after the rotation.
     #[serde(default)]
@@ -328,46 +323,6 @@ pub struct SetModel {
 }
 
 impl Project {
-    /// Put a KiCad library model into `cache/models/kicad/` and give its
-    /// relative path. `spec` is `Library:Name` or `Library/Name`.
-    fn kicad_model_into_cache(&self, spec: &str) -> Result<String> {
-        let (lib, name) = spec
-            .split_once(':')
-            .or_else(|| spec.split_once('/'))
-            .filter(|(l, n)| {
-                !l.is_empty() && !n.is_empty() && !l.contains("..") && !n.contains("..")
-            })
-            .ok_or_else(|| {
-                Error::invalid(format!(
-                    "`kicad:{spec}` must be `kicad:Library:Name`, for example \
-                     `kicad:LED_SMD:LED_0603_1608Metric`."
-                ))
-            })?;
-        let rel = format!("kicad/{lib}/{name}.step");
-        let dst = self.root().join(MODEL_DIR).join(&rel);
-        if dst.is_file() {
-            return Ok(rel);
-        }
-        let roots = crate::kicad::model_dirs(self.root(), self.library());
-        let local =
-            lamina_kicad::library::resolve_model(&roots, &format!("{lib}.3dshapes/{name}.step"));
-        let bytes = match local {
-            Some(p) => std::fs::read(&p).map_err(|e| Error::io(&p, e))?,
-            None => {
-                let b = self.kicad_source().model(lib, name).map_err(|e| {
-                    Error::invalid(format!(
-                        "{lib}/{name}: {e}. Run `lamina fetch --kicad {lib}:{name}` on a \
-                         computer with a network to put it in the library."
-                    ))
-                })?;
-                let _ = self.library().put(&kicad_model_rel(lib, name), &b);
-                b
-            }
-        };
-        write_atomic(&dst, &bytes)?;
-        Ok(rel)
-    }
-
     pub fn set_model(&mut self, p: SetModel) -> Result<OpResult> {
         if !self.data.footprints.contains_key(&p.footprint) {
             return Err(Error::invalid(format!(
@@ -376,9 +331,7 @@ impl Project {
             )));
         }
         let src = std::path::Path::new(&p.file);
-        let rel = if let Some(spec) = p.file.strip_prefix("kicad:") {
-            self.kicad_model_into_cache(spec)?
-        } else if src.is_absolute() {
+        let rel = if src.is_absolute() {
             let name = src
                 .file_name()
                 .and_then(|n| n.to_str())
@@ -390,6 +343,8 @@ impl Project {
                 std::fs::copy(src, &dst).map_err(|e| Error::io(src, e))?;
             }
             rel
+        } else if lamina_model::provider::split_name(&p.file).is_some() {
+            self.provider_model_into_cache(&p.file)?
         } else {
             if p.file.contains("..") {
                 return Err(Error::invalid(

@@ -150,14 +150,11 @@ enum Cmd {
         #[arg(long)]
         name: Option<String>,
     },
-    /// Download LCSC parts and KiCad footprints into the part library, so
-    /// that boards can import them without a network.
+    /// Download parts into the part library, so that boards can import them
+    /// without a network. A part is provider:id, for example lcsc:C6186 or
+    /// kicad:LED_SMD:LED_0603_1608Metric.
     Fetch {
-        /// LCSC numbers, for example C6186.
-        lcsc: Vec<String>,
-        /// KiCad footprints as Library:Name.
-        #[arg(long)]
-        kicad: Vec<String>,
+        parts: Vec<String>,
         /// Download again, also when the library has the files.
         #[arg(long)]
         refresh: bool,
@@ -383,19 +380,11 @@ fn main() -> anyhow::Result<()> {
             println!("{}", serde_json::to_string_pretty(&ws.file)?);
             Ok(())
         }
-        Cmd::Fetch {
-            lcsc,
-            kicad,
-            refresh,
-        } => {
-            let r = lamina_core::library::fetch(
+        Cmd::Fetch { parts, refresh } => {
+            let r = lamina_core::provider::fetch(
                 &lamina_core::model::Library::user(),
-                &lamina_core::Sources::online(),
-                &lamina_core::FetchLibrary {
-                    lcsc,
-                    kicad,
-                    refresh,
-                },
+                &lamina_core::Providers::standard(None),
+                &lamina_core::FetchLibrary { parts, refresh },
             )?;
             println!("{}", serde_json::to_string_pretty(&r)?);
             if r.failed.is_empty() {
@@ -405,7 +394,7 @@ fn main() -> anyhow::Result<()> {
             }
         }
         Cmd::Library => {
-            let info = lamina_core::library::library_info(&lamina_core::model::Library::user());
+            let info = lamina_core::provider::library_info(&lamina_core::model::Library::user());
             println!("{}", serde_json::to_string_pretty(&info)?);
             Ok(())
         }

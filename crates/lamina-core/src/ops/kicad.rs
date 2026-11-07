@@ -10,61 +10,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::project::{OpResult, Project, Touched};
 
-fn yes() -> bool {
-    true
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
-pub struct SearchKicadFootprints {
-    /// Words that must all be in `Library:Name`, for example `sot-23` or `qfn 32 0.5`.
-    pub query: String,
-    /// The maximum number of results (default 20).
-    #[serde(default)]
-    pub limit: Option<usize>,
-}
-
-#[derive(Debug, Clone, Serialize, JsonSchema)]
-pub struct KicadSearch {
-    pub hits: Vec<library::Hit>,
-    /// The number of library folders that Lamina searched.
-    pub libraries: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub hint: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
-pub struct ImportKicadFootprint {
-    /// `Library:Name` (for example `Resistor_SMD:R_0603_1608Metric`), a footprint
-    /// name to find in the local libraries, or the path of a `.kicad_mod` file.
-    pub footprint: String,
-    /// Also add a part with this refdes.
-    #[serde(default)]
-    pub refdes: Option<String>,
-    #[serde(default)]
-    pub value: Option<String>,
-    /// The footprint id to use instead of the KiCad name.
-    #[serde(default)]
-    pub footprint_id: Option<String>,
-    /// Also get the STEP model (default true).
-    #[serde(default = "yes")]
-    pub model: bool,
-    /// If the footprint is not in the local libraries, download it from the
-    /// official KiCad libraries (default true). This needs `Library:Name`.
-    #[serde(default = "yes")]
-    pub online: bool,
-    /// Replace a footprint or a part that has the same id.
-    #[serde(default)]
-    pub replace: bool,
-    #[serde(default)]
-    pub strict: bool,
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ImportKicadBoard {
     /// The path of the `.kicad_pcb` file.
     pub path: String,
     /// Find the 3D models in the local KiCad libraries (default true).
-    #[serde(default = "yes")]
+    #[serde(default = "super::yes")]
     pub models: bool,
     /// Also download the STEP models that are not found locally (default false).
     /// This is slow for large boards.
@@ -93,49 +44,16 @@ pub struct KicadExported {
     pub zones: usize,
 }
 
-/// KiCad footprint roots: `kicad_footprints` of the workspace, the KiCad
-/// installation, then the `kicad/footprints` folders of the part library.
-pub(crate) fn footprint_dirs(root: &Path, lib: &Library) -> Vec<PathBuf> {
-    let mut v = Workspace::find(root)
-        .map(|w| w.kicad_footprint_dirs())
-        .unwrap_or_default();
-    v.extend(library::env_footprint_dirs());
-    v.extend(lib.kicad_footprint_dirs());
-    v
-}
-
-/// KiCad model roots, in the same order as [`footprint_dirs`].
-pub(crate) fn model_dirs(root: &Path, lib: &Library) -> Vec<PathBuf> {
+/// KiCad model roots: `kicad_models` of the workspace, then the KiCad installation.
+fn model_dirs(root: &Path) -> Vec<PathBuf> {
     let mut v = Workspace::find(root)
         .map(|w| w.kicad_model_dirs())
         .unwrap_or_default();
     v.extend(library::env_model_dirs());
-    v.extend(lib.kicad_model_dirs());
     v
 }
 
 impl Project {
-    pub fn search_kicad_footprints(&self, p: SearchKicadFootprints) -> Result<KicadSearch> {
-        let dirs = footprint_dirs(self.root(), self.library());
-        let libraries = library::pretty_libs(&dirs).len();
-        let hits = library::search(&dirs, &p.query, p.limit.unwrap_or(20));
-        let hint = if libraries == 0 {
-            Some(
-                "There are no local KiCad libraries. Set kicad_footprints in lamina.json, \
-                 or set KICAD9_FOOTPRINT_DIR. Also, import_kicad_footprint with `Library:Name` \
-                 downloads from the official online libraries and keeps a copy in the part library."
-                    .into(),
-            )
-        } else {
-            None
-        };
-        Ok(KicadSearch {
-            hits,
-            libraries,
-            hint,
-        })
-    }
-
     /// Put the STEP model of a KiCad footprint into `cache/models/kicad/`.
     fn resolve_kicad_model(
         &self,
@@ -157,7 +75,7 @@ impl Project {
             || (!m.path.starts_with("${") && !Path::new(&m.path).is_absolute());
         let online = online && !in_project;
         if !dst.is_file() || in_project {
-            let mut roots = model_dirs(self.root(), self.library());
+            let mut roots = model_dirs(self.root());
             if in_project {
                 roots = project_dir.map(Path::to_path_buf).into_iter().collect();
             }
@@ -204,7 +122,6 @@ impl Project {
                             notes.push(format!("The model file was not saved: {e}"));
                             return None;
                         }
-                        let _ = self.library().put(&kicad_model_rel(&lib, &name), &bytes);
                     }
                     Err(e) => {
                         notes.push(format!("3D model not downloaded: {e}"));
@@ -265,138 +182,6 @@ impl Project {
         tries.dedup();
         notes.extend(tries);
         None
-    }
-
-    pub fn import_kicad_footprint(&mut self, p: ImportKicadFootprint) -> Result<OpResult> {
-        let spec = p.footprint.trim();
-        let as_path = Path::new(spec);
-        let (text, library, origin) = if as_path.is_file() {
-            let lib = as_path
-                .parent()
-                .and_then(|d| d.file_name())
-                .and_then(|s| s.to_str())
-                .map(|s| s.trim_end_matches(".pretty").to_string())
-                .unwrap_or_default();
-            let text = std::fs::read_to_string(as_path).map_err(|e| Error::io(as_path, e))?;
-            (text, lib, spec.replace('\\', "/"))
-        } else if let Some(hit) = library::find(&footprint_dirs(self.root(), self.library()), spec)
-        {
-            let text = std::fs::read_to_string(&hit.path)
-                .map_err(|e| Error::io(Path::new(&hit.path), e))?;
-            (text, hit.library, hit.path)
-        } else if p.online {
-            let (lib, name) = spec.split_once(':').ok_or_else(|| {
-                Error::invalid(format!(
-                    "`{spec}` was not found in the local KiCad libraries. \
-                     Give `Library:Name` to download it from the online libraries."
-                ))
-            })?;
-            let text = self.kicad_source().footprint(lib, name).map_err(|e| {
-                Error::invalid(format!(
-                    "{spec}: {e}. Run `lamina fetch --kicad {spec}` on a computer with a \
-                     network to put it in the library."
-                ))
-            })?;
-            let _ = self
-                .library()
-                .put(&kicad_footprint_rel(lib, name), text.as_bytes());
-            (
-                text,
-                lib.to_string(),
-                format!("kicad-footprints/{lib}.pretty/{name}.kicad_mod"),
-            )
-        } else {
-            return Err(Error::invalid(format!(
-                "`{spec}` was not found in the local KiCad libraries. \
-                 Give `Library:Name` and set online: true to download it."
-            )));
-        };
-        let inst =
-            lamina_kicad::parse_footprint(&text, &library, &origin).map_err(Error::Invalid)?;
-        let mut fp = inst.footprint;
-        if let Some(id) = &p.footprint_id {
-            fp.id = id.clone();
-        }
-        if !valid_id(&fp.id) {
-            return Err(Error::invalid(format!(
-                "The footprint id `{}` cannot be used as a file name. Set footprint_id to a different id.",
-                fp.id
-            )));
-        }
-        let mut notes = inst.notes.clone();
-        let mut d = self.data.clone();
-        let mut touched = Touched::default();
-        let fp_id = fp.id.clone();
-        if d.footprints.contains_key(&fp_id) && !p.replace {
-            notes.push(format!(
-                "The footprint `{fp_id}` is already in the project. It is kept as is."
-            ));
-        } else {
-            if p.model {
-                if !inst.models.is_empty() {
-                    // The project of a footprint file is the folder above its `.pretty` folder.
-                    let dir = as_path.parent().filter(|_| as_path.is_file()).map(|d| {
-                        match d.extension() {
-                            Some(e) if e == "pretty" => d.parent().unwrap_or(d),
-                            _ => d,
-                        }
-                    });
-                    if let Some((mr, h)) = self.resolve_kicad_models(
-                        &inst.library,
-                        &inst.name,
-                        &inst.models,
-                        p.online,
-                        dir,
-                        &mut notes,
-                    ) {
-                        fp.model = Some(mr);
-                        fp.height = h;
-                    }
-                } else {
-                    notes.push("The footprint does not name a 3D model.".into());
-                }
-            }
-            touched = touched.footprint(fp_id.clone());
-            d.footprints.insert(fp_id.clone(), fp);
-        }
-        let pads = d.footprints[&fp_id].pads.len();
-        let mut summary = format!(
-            "{}:{} -> footprint `{fp_id}` with {pads} pads",
-            inst.library, inst.name
-        );
-        let parts_generated = lamina_build::owned(self.root()).contains(&FileKind::Parts);
-        if let Some(r) = p.refdes.as_deref() {
-            if parts_generated {
-                notes.push(format!(
-                    "parts.json is generated from {}. Add the part there: \
-                     {r}: {{ footprint: '{fp_id}'{} }}",
-                    lamina_build::SOURCE_FILE,
-                    p.value
-                        .as_deref()
-                        .map(|v| format!(", value: '{v}'"))
-                        .unwrap_or_default()
-                ));
-                summary = format!("{r} not added (see notes): {summary}");
-            } else {
-                if !valid_refdes(r) {
-                    return Err(Error::invalid(format!("The refdes `{r}` is not valid.")));
-                }
-                if d.parts.parts.contains_key(r) && !p.replace {
-                    return Err(Error::invalid(format!(
-                        "{r} already exists. Set replace: true to change it."
-                    )));
-                }
-                let mut part = Part::new(fp_id.clone());
-                part.value = p.value.clone();
-                part.description = inst.properties.get("Description").cloned();
-                d.parts.parts.insert(r.to_string(), part);
-                touched = touched.and(FileKind::Parts);
-                summary = format!("{r}: {summary}");
-            }
-        }
-        let mut res = self.commit(d, touched, p.strict, summary)?;
-        res.notes = notes;
-        Ok(res)
     }
 
     pub fn import_kicad_board(&mut self, p: ImportKicadBoard) -> Result<OpResult> {

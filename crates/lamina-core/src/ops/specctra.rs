@@ -35,14 +35,10 @@ pub struct ImportSpecctraSession {
     pub path: String,
     /// If true (default), replace the tracks and vias of the routed nets.
     /// If false, add the routes of the session to them.
-    #[serde(default = "yes")]
+    #[serde(default = "super::yes")]
     pub replace: bool,
     #[serde(default)]
     pub strict: bool,
-}
-
-fn yes() -> bool {
-    true
 }
 
 impl Project {

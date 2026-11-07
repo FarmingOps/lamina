@@ -7,6 +7,7 @@ pub mod layers;
 pub mod library;
 pub mod pcb;
 pub mod project;
+pub mod provider;
 
 pub use lamina_model::sexpr;
 

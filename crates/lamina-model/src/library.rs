@@ -1,14 +1,11 @@
-//! The part library: folders that keep downloaded parts, models and KiCad
-//! files, so that a board can import them without a network.
+//! The part library: folders that keep fetched parts and models, so that a
+//! board can import them without a network.
 //!
 //! A library root has this layout:
 //!
-//! - `parts/<LCSC>.json`: the EasyEDA component record.
-//! - `models/lcsc/<uuid>.obj` and `.step`: EasyEDA models.
-//! - `models/<other>/...`: any model file, in the same relative form as
-//!   `cache/models/` of a board.
-//! - `kicad/footprints/<Library>.pretty/<Name>.kicad_mod`: KiCad footprints.
-//! - `kicad/models/<Library>.3dshapes/<Name>.step`: KiCad models.
+//! - `parts/<provider>/<id>.json`: a [`crate::provider::Record`].
+//! - `models/<provider>/<file>`: the model files, in the same relative form
+//!   as `cache/models/` of a board.
 //!
 //! The roots are, in the search order: the `lib` folders of the workspace and
 //! then the user library. Lamina writes new downloads to the user library only.
@@ -18,6 +15,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
+use crate::provider::Record;
 use crate::workspace::Workspace;
 
 /// The environment variable that moves the user library.
@@ -83,8 +81,7 @@ impl Library {
         self.roots.iter().map(|r| r.join(rel)).find(|p| p.is_file())
     }
 
-    /// Writes `rel` in the store. A failure is not an error for the caller:
-    /// the board still has its own copy.
+    /// Writes `rel` in the store.
     pub fn put(&self, rel: &str, bytes: &[u8]) -> Result<PathBuf> {
         let path = self.store.join(rel);
         crate::project::write_atomic(&path, bytes)?;
@@ -103,66 +100,51 @@ impl Library {
         Ok(path)
     }
 
-    /// The `kicad/footprints` folders that exist.
-    pub fn kicad_footprint_dirs(&self) -> Vec<PathBuf> {
-        self.sub_dirs("kicad/footprints")
-    }
-
-    /// The `kicad/models` folders that exist.
-    pub fn kicad_model_dirs(&self) -> Vec<PathBuf> {
-        self.sub_dirs("kicad/models")
-    }
-
     /// The `models` folders that exist.
     pub fn model_dirs(&self) -> Vec<PathBuf> {
-        self.sub_dirs("models")
-    }
-
-    /// The `parts/*.json` files in all roots. A part that is in two roots is
-    /// listed once, from the first root.
-    pub fn part_files(&self) -> Vec<(String, PathBuf)> {
-        let mut out: Vec<(String, PathBuf)> = Vec::new();
-        for root in &self.roots {
-            let Ok(rd) = std::fs::read_dir(root.join("parts")) else {
-                continue;
-            };
-            for e in rd.flatten() {
-                let p = e.path();
-                let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else {
-                    continue;
-                };
-                if p.extension().is_some_and(|x| x == "json") && !out.iter().any(|(s, _)| s == stem)
-                {
-                    out.push((stem.to_string(), p));
-                }
-            }
-        }
-        out.sort();
-        out
-    }
-
-    fn sub_dirs(&self, rel: &str) -> Vec<PathBuf> {
         self.roots
             .iter()
-            .map(|r| r.join(rel))
+            .map(|r| r.join("models"))
             .filter(|p| p.is_dir())
             .collect()
     }
-}
 
-/// The relative file name of an EasyEDA component record.
-pub fn part_rel(lcsc: &str) -> String {
-    format!("parts/{lcsc}.json")
-}
-
-/// The relative file name of a KiCad footprint.
-pub fn kicad_footprint_rel(library: &str, name: &str) -> String {
-    format!("kicad/footprints/{library}.pretty/{name}.kicad_mod")
-}
-
-/// The relative file name of a KiCad model.
-pub fn kicad_model_rel(library: &str, name: &str) -> String {
-    format!("kicad/models/{library}.3dshapes/{name}.step")
+    /// All records in all roots. A part that is in two roots is listed once,
+    /// from the first root. With a provider id, only that provider.
+    pub fn records(&self, provider: Option<&str>) -> Vec<Record> {
+        let mut out: Vec<Record> = Vec::new();
+        for root in &self.roots {
+            let Ok(providers) = std::fs::read_dir(root.join("parts")) else {
+                continue;
+            };
+            for pd in providers.flatten() {
+                let pname = pd.file_name().to_string_lossy().to_string();
+                if provider.is_some_and(|p| p != pname) {
+                    continue;
+                }
+                let Ok(files) = std::fs::read_dir(pd.path()) else {
+                    continue;
+                };
+                for f in files.flatten() {
+                    let p = f.path();
+                    if !p.extension().is_some_and(|x| x == "json") {
+                        continue;
+                    }
+                    let Ok(text) = std::fs::read_to_string(&p) else {
+                        continue;
+                    };
+                    let Ok(r) = serde_json::from_str::<Record>(&text) else {
+                        continue;
+                    };
+                    if !out.iter().any(|o| o.provider == r.provider && o.id == r.id) {
+                        out.push(r);
+                    }
+                }
+            }
+        }
+        out.sort_by(|a, b| (&a.provider, &a.id).cmp(&(&b.provider, &b.id)));
+        out
+    }
 }
 
 #[cfg(test)]
@@ -182,17 +164,25 @@ mod tests {
         assert_eq!(lib.roots[1], lib.store);
 
         let lib = Library::at(&t.path().join("lib"));
-        assert!(lib.find("parts/C1.json").is_none());
-        lib.put("parts/C1.json", b"{}").unwrap();
-        assert!(lib.find("parts/C1.json").is_some());
-        assert_eq!(lib.part_files().len(), 1);
-        assert_eq!(lib.part_files()[0].0, "C1");
-        assert!(lib.kicad_footprint_dirs().is_empty());
+        assert!(lib.find("parts/x/C1.json").is_none());
+        let r = Record {
+            provider: "x".into(),
+            id: "C1".into(),
+            footprint: crate::footprint::Footprint::new(
+                "F",
+                crate::footprint::Provenance::Manual { note: "t".into() },
+            ),
+            info: Default::default(),
+            notes: vec![],
+        };
         lib.put(
-            &kicad_footprint_rel("LED_SMD", "LED_0603_1608Metric"),
-            b"(footprint)",
+            "parts/x/C1.json",
+            serde_json::to_string(&r).unwrap().as_bytes(),
         )
         .unwrap();
-        assert_eq!(lib.kicad_footprint_dirs().len(), 1);
+        assert!(lib.find("parts/x/C1.json").is_some());
+        assert_eq!(lib.records(None).len(), 1);
+        assert_eq!(lib.records(Some("y")).len(), 0);
+        assert_eq!(lib.records(Some("x"))[0].id, "C1");
     }
 }

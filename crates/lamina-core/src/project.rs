@@ -66,6 +66,8 @@ pub struct Project {
     /// The part library: downloads go there too, and imports look there
     /// before the network.
     library: Library,
+    /// The part providers, in the search order.
+    pub(crate) providers: crate::provider::Providers,
     cached: Option<Vec<Violation>>,
     /// The size and the modification time of each project file at the last
     /// load or save. They show changes that another person or process made.
@@ -109,6 +111,7 @@ impl Project {
             source: std::sync::Arc::new(lamina_parts::HttpSource::default()),
             kicad: std::sync::Arc::new(lamina_kicad::HttpSource),
             library: Library::for_board(dir),
+            providers: crate::provider::Providers::standard(Some(dir)),
             cached: None,
             stamp: disk_stamp(dir),
             _lock: Some(lock),
@@ -136,6 +139,7 @@ impl Project {
             source: std::sync::Arc::new(lamina_parts::HttpSource::default()),
             kicad: std::sync::Arc::new(lamina_kicad::HttpSource),
             library: Library::for_board(dir),
+            providers: crate::provider::Providers::standard(Some(dir)),
             cached: None,
             stamp,
             _lock: None,
@@ -179,12 +183,9 @@ impl Project {
         self.kicad = s;
     }
 
-    /// The sources of this board, bundled for a fetch.
-    pub fn sources(&self) -> crate::library::Sources {
-        crate::library::Sources {
-            parts: self.source.clone(),
-            footprints: self.kicad.clone(),
-        }
+    /// Use different providers (tests, offline mirrors, new sources).
+    pub fn set_providers(&mut self, p: crate::provider::Providers) {
+        self.providers = p;
     }
 
     /// The part library of this board.

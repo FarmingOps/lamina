@@ -12,14 +12,10 @@ pub struct SetNets {
     /// A map from the net name to its pads and an optional net class.
     pub nets: BTreeMap<String, Net>,
     /// If true (default), replace the full netlist. If false, merge into it.
-    #[serde(default = "yes")]
+    #[serde(default = "super::yes")]
     pub replace: bool,
     #[serde(default)]
     pub strict: bool,
-}
-
-fn yes() -> bool {
-    true
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]

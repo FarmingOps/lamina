@@ -197,22 +197,12 @@ fn ids() {
 
 #[test]
 fn import_from_fixtures() {
-    let (_t, mut p) = new_project();
-    let fx =
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../lamina-parts/tests/fixtures");
-    p.set_source(std::sync::Arc::new(lamina_parts::DirSource { dir: fx }));
-    let r = p
-        .import_lcsc(ImportLcsc {
-            lcsc: "C6186".into(),
-            refdes: Some("U3".into()),
-            value: None,
-            footprint_id: None,
-            refresh: false,
-            step: false,
-            replace: false,
-            strict: true,
-        })
-        .unwrap();
+    let (t, mut p) = new_project();
+    p.set_providers(test_providers(
+        &fixtures_parts(),
+        &t.path().join("no-models"),
+    ));
+    let r = import(&mut p, "lcsc:C6186", Some("U3")).unwrap();
     assert!(r.summary.contains("basic"), "{}", r.summary);
     assert!(
         r.notes.iter().any(|n| n.contains("3D model")),
@@ -223,23 +213,27 @@ fn import_from_fixtures() {
     assert_eq!(part.lcsc.as_deref(), Some("C6186"));
     let fp = &p.data.footprints[&part.footprint];
     let m = fp.model.as_ref().unwrap();
+    assert!(m.file.starts_with("lcsc/"), "{}", m.file);
     assert!(p.root().join("cache/models").join(&m.file).is_file());
-    assert!(p.root().join("cache/parts/C6186.json").is_file());
-    // The second import uses the cached footprint again and adds one more part.
+    assert!(p.root().join("cache/parts/lcsc/C6186.json").is_file());
+    // The second import uses the cached record again and adds one more part.
     let r = p
-        .import_lcsc(ImportLcsc {
-            lcsc: "C6186".into(),
+        .import_part(ImportPart {
+            part: "lcsc:C6186".into(),
             refdes: Some("U4".into()),
             value: Some("3V3 LDO".into()),
             footprint_id: None,
             refresh: false,
-            step: false,
+            model: true,
             replace: false,
             strict: false,
         })
         .unwrap();
     assert!(r.notes.iter().any(|n| n.contains("kept as is")));
     assert_eq!(p.data.parts.parts["U4"].value.as_deref(), Some("3V3 LDO"));
+    // A name without a provider is refused with the list of providers.
+    let e = import(&mut p, "C6186", None).unwrap_err().to_string();
+    assert!(e.contains("lcsc") && e.contains("kicad"), "{e}");
 }
 
 #[test]
@@ -292,64 +286,51 @@ fn shared_editor_and_engine_see_each_other() {
 
 #[test]
 fn kicad_footprint_import_and_board_round_trip() {
-    let fixtures = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../lamina-kicad/tests/fixtures/footprints");
+    let fixtures = fixtures_kicad();
     let (t, mut p) = new_project();
-    p.set_kicad_source(std::sync::Arc::new(lamina_kicad::DirSource {
-        footprints: fixtures.clone(),
-        models: t.path().join("no-models"),
-    }));
-    // Downloaded "online" (from the fixture source), with a part.
+    p.set_providers(test_providers(
+        &fixtures_parts(),
+        &t.path().join("no-models"),
+    ));
+    // From the fixture library, with a part.
     let r = p
-        .import_kicad_footprint(ImportKicadFootprint {
-            footprint: "Package_TO_SOT_SMD:SOT-23".into(),
+        .import_part(ImportPart {
+            part: "kicad:Package_TO_SOT_SMD:SOT-23".into(),
             refdes: Some("Q1".into()),
             value: Some("BSS138".into()),
             footprint_id: None,
+            refresh: false,
             model: true,
-            online: true,
             replace: false,
             strict: false,
         })
         .unwrap();
     assert!(
-        r.summary.contains("Q1: Package_TO_SOT_SMD:SOT-23"),
+        r.summary.contains("Q1: kicad:Package_TO_SOT_SMD:SOT-23"),
         "{}",
         r.summary
     );
     assert!(
-        r.notes
-            .iter()
-            .any(|n| n.contains("not downloaded") || n.contains("not found")),
+        r.notes.iter().any(|n| n.contains("3D model")),
         "{:?}",
         r.notes
     );
     assert_eq!(p.data.footprints["SOT-23"].pads.len(), 3);
     assert_eq!(p.data.parts.parts["Q1"].value.as_deref(), Some("BSS138"));
-    // If it is not found locally and online is false, there is a clear error.
-    let e = p
-        .import_kicad_footprint(ImportKicadFootprint {
-            footprint: "Nope:Missing".into(),
-            refdes: None,
-            value: None,
-            footprint_id: None,
-            model: false,
-            online: false,
-            replace: false,
-            strict: false,
-        })
+    // A footprint that no source has gives a clear error.
+    let e = import(&mut p, "kicad:Nope:Missing", None)
         .unwrap_err()
         .to_string();
-    assert!(e.contains("not found"), "{e}");
+    assert!(e.contains("Nope"), "{e}");
     // A .kicad_mod path also works.
     let path = fixtures.join("Resistor_SMD.pretty/R_0603_1608Metric.kicad_mod");
-    p.import_kicad_footprint(ImportKicadFootprint {
-        footprint: path.to_string_lossy().to_string(),
+    p.import_part(ImportPart {
+        part: format!("kicad:{}", path.to_string_lossy()),
         refdes: Some("R1".into()),
         value: None,
         footprint_id: Some("R0603K".into()),
+        refresh: false,
         model: false,
-        online: false,
         replace: false,
         strict: false,
     })
@@ -703,14 +684,54 @@ fn fixtures_parts() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../lamina-parts/tests/fixtures")
 }
 
-fn import_c6186(p: &mut Project, refdes: &str) -> Result<OpResult> {
-    p.import_lcsc(ImportLcsc {
-        lcsc: "C6186".into(),
-        refdes: Some(refdes.into()),
+fn fixtures_kicad() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../lamina-kicad/tests/fixtures/footprints")
+}
+
+/// The vendor provider on the recorded fixtures (`dir`), and the footprint
+/// provider on the fixture libraries with `models` as its model root.
+fn test_providers(dir: &std::path::Path, models: &std::path::Path) -> Providers {
+    use std::sync::Arc;
+    let parts = lamina_parts::provider::LcscProvider::new(Arc::new(lamina_parts::DirSource {
+        dir: dir.to_path_buf(),
+    }));
+    let kicad = lamina_kicad::provider::KicadProvider::new(
+        Arc::new(lamina_kicad::DirSource {
+            footprints: fixtures_kicad(),
+            models: models.to_path_buf(),
+        }),
+        vec![fixtures_kicad()],
+        vec![models.to_path_buf()],
+    );
+    Providers::new(vec![Arc::new(parts), Arc::new(kicad)])
+}
+
+/// Providers that cannot reach anything: an empty folder as every source.
+fn offline_providers(empty: &std::path::Path) -> Providers {
+    use std::sync::Arc;
+    let parts = lamina_parts::provider::LcscProvider::new(Arc::new(lamina_parts::DirSource {
+        dir: empty.to_path_buf(),
+    }));
+    let kicad = lamina_kicad::provider::KicadProvider::new(
+        Arc::new(lamina_kicad::DirSource {
+            footprints: empty.to_path_buf(),
+            models: empty.to_path_buf(),
+        }),
+        vec![],
+        vec![],
+    );
+    Providers::new(vec![Arc::new(parts), Arc::new(kicad)])
+}
+
+fn import(p: &mut Project, part: &str, refdes: Option<&str>) -> Result<OpResult> {
+    p.import_part(ImportPart {
+        part: part.into(),
+        refdes: refdes.map(String::from),
         value: None,
         footprint_id: None,
         refresh: false,
-        step: false,
+        model: true,
         replace: false,
         strict: false,
     })
@@ -720,15 +741,28 @@ fn import_c6186(p: &mut Project, refdes: &str) -> Result<OpResult> {
 fn library_makes_import_and_search_work_offline() {
     let t = tempfile::tempdir().unwrap();
     let lib = Library::at(&t.path().join("lib"));
+    let models = t.path().join("3d");
+    let shapes = models.join("Package_TO_SOT_SMD.3dshapes");
+    std::fs::create_dir_all(&shapes).unwrap();
+    let step = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../lamina-step/corpus/C25804.step");
+    std::fs::copy(&step, shapes.join("SOT-23.step")).unwrap();
 
-    // Board A has a network (the fixture source). Its downloads go to the library.
+    // Board A has the sources. Its downloads go to the library.
     let mut a = Project::create(&t.path().join("a"), "a").unwrap();
-    a.set_source(std::sync::Arc::new(lamina_parts::DirSource {
-        dir: fixtures_parts(),
-    }));
+    a.set_providers(test_providers(&fixtures_parts(), &models));
     a.set_library(lib.clone());
-    import_c6186(&mut a, "U1").unwrap();
-    assert!(lib.find("parts/C6186.json").is_some());
+    import(&mut a, "lcsc:C6186", Some("U1")).unwrap();
+    import(&mut a, "kicad:Package_TO_SOT_SMD:SOT-23", Some("Q1")).unwrap();
+    assert!(lib.find("parts/lcsc/C6186.json").is_some());
+    assert!(
+        lib.find("parts/kicad/Package_TO_SOT_SMD_SOT-23.json")
+            .is_some()
+    );
+    assert!(
+        lib.find("models/kicad/Package_TO_SOT_SMD/SOT-23.step")
+            .is_some()
+    );
     let m = a.data.footprints[&a.data.parts.parts["U1"].footprint]
         .model
         .clone()
@@ -739,13 +773,13 @@ fn library_makes_import_and_search_work_offline() {
         m.file
     );
 
-    // Board B has no network (an empty source folder) but the same library.
+    // Board B has no sources but the same library.
+    let empty = t.path().join("empty");
+    std::fs::create_dir_all(&empty).unwrap();
     let mut b = Project::create(&t.path().join("b"), "b").unwrap();
-    b.set_source(std::sync::Arc::new(lamina_parts::DirSource {
-        dir: t.path().join("no-network"),
-    }));
+    b.set_providers(offline_providers(&empty));
     b.set_library(lib.clone());
-    let r = import_c6186(&mut b, "U1").unwrap();
+    let r = import(&mut b, "lcsc:C6186", Some("U1")).unwrap();
     assert!(
         r.notes.iter().any(|n| n.contains("came from the library")),
         "{:?}",
@@ -756,141 +790,101 @@ fn library_makes_import_and_search_work_offline() {
         .clone()
         .unwrap();
     assert!(b.root().join("cache/models").join(&m.file).is_file());
-    assert!(b.root().join("cache/parts/C6186.json").is_file());
+    assert!(b.root().join("cache/parts/lcsc/C6186.json").is_file());
+    let r = import(&mut b, "kicad:Package_TO_SOT_SMD:SOT-23", Some("Q1")).unwrap();
+    assert!(r.notes.iter().any(|n| n.contains("came from the library")));
+    assert!(b.data.footprints["SOT-23"].model.is_some());
+    assert!(b.data.footprints["SOT-23"].height.is_some());
+
+    // set_model with provider:id takes the model from the local roots.
+    add_resistor(&mut b, "R1");
+    b.set_providers(test_providers(&empty, &models));
+    b.set_model(SetModel {
+        footprint: "R_0603".into(),
+        file: "kicad:Package_TO_SOT_SMD:SOT-23".into(),
+        offset: [0.0; 3],
+        rotation: [0.0; 3],
+    })
+    .unwrap();
+    assert_eq!(
+        b.data.footprints["R_0603"].model.as_ref().unwrap().file,
+        "kicad/Package_TO_SOT_SMD/SOT-23.step"
+    );
+    b.set_providers(offline_providers(&empty));
 
     // The search falls back to the library and says so.
     let s = b
-        .search_part(SearchPart {
+        .search_parts(SearchParts {
             query: "ams1117".into(),
+            provider: None,
             limit: None,
             basic_only: false,
             in_stock: true,
         })
         .unwrap();
     assert_eq!(s.hits.len(), 1, "{:?}", s.hits);
-    assert_eq!(s.hits[0].lcsc, "C6186");
-    assert!(s.note.is_some());
+    assert_eq!(
+        (s.hits[0].provider.as_str(), s.hits[0].id.as_str()),
+        ("lcsc", "C6186")
+    );
+    assert!(!s.notes.is_empty());
     let e = b
-        .search_part(SearchPart {
+        .search_parts(SearchParts {
             query: "nothing-like-this".into(),
+            provider: Some("lcsc".into()),
             limit: None,
             basic_only: false,
             in_stock: true,
         })
         .unwrap_err();
-    assert!(e.to_string().contains("library"), "{e}");
+    assert!(e.to_string().contains("lcsc"), "{e}");
 
     // A part that is in neither place names the fetch command.
-    let e = b
-        .import_lcsc(ImportLcsc {
-            lcsc: "C14663".into(),
-            refdes: None,
-            value: None,
-            footprint_id: None,
-            refresh: false,
-            step: false,
-            replace: false,
-            strict: false,
-        })
-        .unwrap_err();
-    assert!(e.to_string().contains("lamina fetch C14663"), "{e}");
+    let e = import(&mut b, "lcsc:C14663", None).unwrap_err();
+    assert!(e.to_string().contains("lamina fetch lcsc:C14663"), "{e}");
 }
 
 #[test]
 fn fetch_fills_the_library_without_a_project() {
     let t = tempfile::tempdir().unwrap();
     let lib = Library::at(&t.path().join("lib"));
-    let parts = lamina_parts::DirSource {
-        dir: fixtures_parts(),
-    };
-    let kicad_fixtures = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../lamina-kicad/tests/fixtures/footprints");
-    // A model folder with one STEP, in the KiCad layout.
     let models = t.path().join("3d");
     let shapes = models.join("Package_TO_SOT_SMD.3dshapes");
     std::fs::create_dir_all(&shapes).unwrap();
     let step = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../lamina-step/corpus/C25804.step");
     std::fs::copy(&step, shapes.join("SOT-23.step")).unwrap();
-    let kicad = lamina_kicad::DirSource {
-        footprints: kicad_fixtures,
-        models,
-    };
+    let providers = test_providers(&fixtures_parts(), &models);
     let req = FetchLibrary {
-        lcsc: vec!["C6186".into(), "C999999".into()],
-        kicad: vec!["Package_TO_SOT_SMD:SOT-23".into(), "bad".into()],
+        parts: vec![
+            "lcsc:C6186".into(),
+            "lcsc:C999999".into(),
+            "kicad:Package_TO_SOT_SMD:SOT-23".into(),
+            "nope:x".into(),
+            "bad".into(),
+        ],
         refresh: false,
     };
-    let sources = Sources {
-        parts: std::sync::Arc::new(parts),
-        footprints: std::sync::Arc::new(kicad),
-    };
-    let r = lamina_core::ops::library::fetch(&lib, &sources, &req).unwrap();
-    assert_eq!(r.done, vec!["C6186", "Package_TO_SOT_SMD:SOT-23"]);
-    assert_eq!(r.failed.len(), 2, "{:?}", r.failed);
-    assert!(
-        lib.find("kicad/footprints/Package_TO_SOT_SMD.pretty/SOT-23.kicad_mod")
-            .is_some()
-    );
-    assert!(
-        lib.find("kicad/models/Package_TO_SOT_SMD.3dshapes/SOT-23.step")
-            .is_some()
-    );
-    let r = lamina_core::ops::library::fetch(&lib, &sources, &req).unwrap();
-    assert_eq!(r.kept, vec!["C6186", "Package_TO_SOT_SMD:SOT-23"]);
-    let info = lamina_core::ops::library::library_info(&lib);
-    assert_eq!(info.parts, vec!["C6186"]);
-    assert_eq!(info.kicad_footprints, 1);
-
-    // A board without a network finds the KiCad footprint and the model in the library.
-    let mut b = Project::create(&t.path().join("b"), "b").unwrap();
-    b.set_library(lib.clone());
-    b.set_kicad_source(std::sync::Arc::new(lamina_kicad::DirSource {
-        footprints: t.path().join("no-network"),
-        models: t.path().join("no-network"),
-    }));
-    let hits = b
-        .search_kicad_footprints(SearchKicadFootprints {
-            query: "sot-23".into(),
-            limit: None,
-        })
-        .unwrap();
-    assert!(
-        hits.hits.iter().any(|h| h.name == "SOT-23"),
-        "{:?}",
-        hits.hits
-    );
-    let r = b
-        .import_kicad_footprint(ImportKicadFootprint {
-            footprint: "Package_TO_SOT_SMD:SOT-23".into(),
-            refdes: Some("Q1".into()),
-            value: None,
-            footprint_id: None,
-            model: true,
-            online: false,
-            replace: false,
-            strict: false,
-        })
-        .unwrap();
-    assert!(
-        r.notes.iter().any(|n| n.contains("3D model kicad/")),
-        "{:?}",
-        r.notes
-    );
-
-    // set_model with kicad: takes the generic model from the library too.
-    add_resistor(&mut b, "R1");
-    let r = b
-        .set_model(SetModel {
-            footprint: "R_0603".into(),
-            file: "kicad:Package_TO_SOT_SMD:SOT-23".into(),
-            offset: [0.0; 3],
-            rotation: [0.0; 3],
-        })
-        .unwrap();
-    assert!(r.summary.contains("model"), "{}", r.summary);
+    let r = lamina_core::provider::fetch(&lib, &providers, &req).unwrap();
     assert_eq!(
-        b.data.footprints["R_0603"].model.as_ref().unwrap().file,
-        "kicad/Package_TO_SOT_SMD/SOT-23.step"
+        r.done,
+        vec!["lcsc:C6186", "kicad:Package_TO_SOT_SMD:SOT-23"]
     );
+    assert_eq!(r.failed.len(), 3, "{:?}", r.failed);
+    assert!(
+        lib.find("models/kicad/Package_TO_SOT_SMD/SOT-23.step")
+            .is_some()
+    );
+    let r = lamina_core::provider::fetch(&lib, &providers, &req).unwrap();
+    assert_eq!(
+        r.kept,
+        vec!["lcsc:C6186", "kicad:Package_TO_SOT_SMD:SOT-23"]
+    );
+    let info = lamina_core::provider::library_info(&lib);
+    assert_eq!(
+        info.parts,
+        vec!["kicad:Package_TO_SOT_SMD:SOT-23", "lcsc:C6186"]
+    );
+    let ids: Vec<String> = providers.infos().into_iter().map(|i| i.id).collect();
+    assert_eq!(ids, vec!["lcsc", "kicad"]);
 }

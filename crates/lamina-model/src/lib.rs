@@ -12,6 +12,7 @@ pub mod json;
 pub mod layer;
 pub mod library;
 pub mod project;
+pub mod provider;
 pub mod sexpr;
 pub mod workspace;
 
