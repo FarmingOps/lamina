@@ -11,6 +11,7 @@ rust-version = "1.90"
 [workspace.dependencies]
 lamina-model = { path = "crates/lamina-model" }
 lamina-ports = { path = "crates/lamina-ports" }
+lamina-wiring = { path = "crates/lamina-wiring" }
 lamina-geom = { path = "crates/lamina-geom" }
 lamina-footprint = { path = "crates/lamina-footprint" }
 lamina-parts = { path = "crates/lamina-parts" }

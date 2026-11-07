@@ -227,13 +227,13 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Cmd::Formats => {
-            let f = lamina_core::wiring::standard(None).formats;
+            let f = lamina_wiring::standard(None).formats;
             let infos: Vec<_> = f.iter().map(|f| f.info()).collect();
             println!("{}", serde_json::to_string_pretty(&infos)?);
             Ok(())
         }
         Cmd::Routers => {
-            let r = lamina_core::wiring::standard(None).routers;
+            let r = lamina_wiring::standard(None).routers;
             let infos: Vec<_> = r.iter().map(|r| r.info()).collect();
             println!("{}", serde_json::to_string_pretty(&infos)?);
             Ok(())
@@ -366,7 +366,7 @@ fn main() -> anyhow::Result<()> {
         Cmd::Fetch { parts, refresh } => {
             let r = lamina_core::provider::fetch(
                 &lamina_core::model::Library::user(),
-                &lamina_core::Providers::standard(None),
+                &lamina_core::Providers::new(lamina_wiring::standard(None).providers),
                 &lamina_core::FetchLibrary { parts, refresh },
             )?;
             println!("{}", serde_json::to_string_pretty(&r)?);

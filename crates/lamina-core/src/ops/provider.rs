@@ -31,12 +31,6 @@ impl Providers {
         Providers { list }
     }
 
-    /// The standard set: the parts vendor and the KiCad libraries. The local
-    /// KiCad roots come from `lamina.json` of the workspace that holds `board`.
-    pub fn standard(board: Option<&Path>) -> Providers {
-        Providers::new(crate::wiring::standard(board).providers)
-    }
-
     pub fn get(&self, id: &str) -> Option<&dyn Provider> {
         self.list
             .iter()

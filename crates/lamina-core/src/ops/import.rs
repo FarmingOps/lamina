@@ -17,12 +17,7 @@ fn ext(p: &Path) -> String {
         .to_ascii_lowercase()
 }
 
-/// The id of the format that reads `p`, if one of the standard formats does.
-pub fn board_file_kind(p: &Path) -> Option<String> {
-    board_file_kind_in(&crate::wiring::standard(None), p)
-}
-
-/// Like [`board_file_kind`], with the given ports.
+/// The id of the format in `ports` that reads `p`, if one does.
 pub fn board_file_kind_in(ports: &Ports, p: &Path) -> Option<String> {
     ports.format_for(p).map(|f| f.info().id)
 }
@@ -43,6 +38,11 @@ fn fnv(s: &str) -> u64 {
     })
 }
 
+/// The folder for imports of board files: `imports` in the data folder of the user.
+pub fn imports_dir() -> PathBuf {
+    data_dir().join("imports")
+}
+
 fn data_dir() -> PathBuf {
     std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
@@ -52,16 +52,11 @@ fn data_dir() -> PathBuf {
         .join("lamina")
 }
 
-/// The project folder that an opened board file is imported into. There is
-/// one folder for each source path, in the local data folder of the user.
-pub fn import_dir_for(file: &Path) -> PathBuf {
-    import_dir_in(&data_dir().join("imports"), file)
-}
-
-/// Like [`import_dir_for`], but in `base`.
-pub fn import_dir_in(base: &Path, file: &Path) -> PathBuf {
+/// The project folder in `base` that an opened board file is imported
+/// into. There is one folder for each source path.
+pub fn import_dir_in(ports: &Ports, base: &Path, file: &Path) -> PathBuf {
     let abs = std::path::absolute(file).unwrap_or_else(|_| file.to_path_buf());
-    let src = source_root(&crate::wiring::standard(None), &abs);
+    let src = source_root(ports, &abs);
     let stem: String = src
         .file_stem()
         .and_then(|s| s.to_str())
@@ -99,9 +94,8 @@ fn source_modified(ports: &Ports, p: &Path) -> Option<std::time::SystemTime> {
     }
 }
 
-/// Import `file` into `dir`. This replaces a board that is already there.
-pub fn import_board_file(file: &Path, dir: &Path) -> Result<OpResult> {
-    let ports = crate::wiring::standard(Some(dir));
+/// Import `file` into `dir` with `ports`. This replaces a board that is already there.
+pub fn import_board_file(ports: Ports, file: &Path, dir: &Path) -> Result<OpResult> {
     if board_file_kind_in(&ports, file).is_none() {
         let ids: Vec<String> = ports.formats.iter().map(|f| f.info().id).collect();
         return Err(Error::invalid(format!(
@@ -130,15 +124,14 @@ pub fn import_board_file(file: &Path, dir: &Path) -> Result<OpResult> {
 }
 
 /// The Lamina project for `path`. If `path` is a project folder, this is the
-/// folder. If not, it is the import folder of the board file. Lamina imports
-/// the file again if the source is newer than the import. Returns the folder,
-/// and the import result if an import ran.
-pub fn open_board_path(path: &Path) -> Result<(PathBuf, Option<OpResult>)> {
-    open_board_path_in(&data_dir().join("imports"), path)
-}
-
-/// Like [`open_board_path`], but with the imports in `base`.
-pub fn open_board_path_in(base: &Path, path: &Path) -> Result<(PathBuf, Option<OpResult>)> {
+/// folder. If not, it is the import folder of the board file in `base`.
+/// Lamina imports the file again if the source is newer than the import.
+/// Returns the folder, and the import result if an import ran.
+pub fn open_board_path_in(
+    ports: &Ports,
+    base: &Path,
+    path: &Path,
+) -> Result<(PathBuf, Option<OpResult>)> {
     if ProjectData::is_project(path) {
         return Ok((path.to_path_buf(), None));
     }
@@ -147,10 +140,9 @@ pub fn open_board_path_in(base: &Path, path: &Path) -> Result<(PathBuf, Option<O
             return Ok((dir.to_path_buf(), None));
         }
     }
-    let dir = import_dir_in(base, path);
+    let dir = import_dir_in(ports, base, path);
     let stamp = dir.join(".imported");
-    let ports = crate::wiring::standard(None);
-    let fresh = match (source_modified(&ports, path), modified(&stamp)) {
+    let fresh = match (source_modified(ports, path), modified(&stamp)) {
         (Some(src), Some(done)) => done >= src && ProjectData::is_project(&dir),
         _ => false,
     };
@@ -158,7 +150,7 @@ pub fn open_board_path_in(base: &Path, path: &Path) -> Result<(PathBuf, Option<O
         return Ok((dir, None));
     }
     std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
-    let r = import_board_file(path, &dir)?;
+    let r = import_board_file(ports.clone(), path, &dir)?;
     let _ = std::fs::write(&stamp, path.display().to_string());
     Ok((dir, Some(r)))
 }
@@ -166,6 +158,30 @@ pub fn open_board_path_in(base: &Path, path: &Path) -> Result<(PathBuf, Option<O
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ports() -> Ports {
+        use std::sync::Arc;
+        Ports {
+            formats: vec![
+                Arc::new(lamina_kicad::KicadFormat),
+                Arc::new(lamina_parts::EasyedaFormat),
+                Arc::new(lamina_export::GerberFormat),
+            ],
+            ..Ports::default()
+        }
+    }
+
+    fn board_file_kind(p: &Path) -> Option<String> {
+        board_file_kind_in(&ports(), p)
+    }
+
+    fn import_dir_for(file: &Path) -> PathBuf {
+        import_dir_in(&ports(), &imports_dir(), file)
+    }
+
+    fn open_board_path_in(base: &Path, path: &Path) -> Result<(PathBuf, Option<OpResult>)> {
+        super::open_board_path_in(&ports(), base, path)
+    }
 
     #[test]
     fn kinds_and_import_dirs() {

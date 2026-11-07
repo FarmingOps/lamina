@@ -1,9 +1,30 @@
 use lamina_core::model::*;
 use lamina_core::*;
 
+/// The ports of a test project: the real adapters on the recorded fixtures,
+/// with no network and no model folder.
+fn default_ports() -> Ports {
+    test_ports(
+        &fixtures_parts(),
+        &std::env::temp_dir().join("lamina-no-models"),
+    )
+}
+
+fn create(dir: &std::path::Path, name: &str) -> Result<Project> {
+    Project::create_with(dir, name, default_ports())
+}
+
+fn open(dir: &std::path::Path) -> Result<Project> {
+    Project::open_with(dir, default_ports())
+}
+
+fn open_shared(dir: &std::path::Path) -> Result<Project> {
+    Project::open_shared_with(dir, default_ports())
+}
+
 fn new_project() -> (tempfile::TempDir, Project) {
     let dir = tempfile::tempdir().unwrap();
-    let mut p = Project::create(&dir.path().join("b"), "demo").unwrap();
+    let mut p = create(&dir.path().join("b"), "demo").unwrap();
     // Never write test downloads into the library of the user.
     p.set_library(Library::at(&dir.path().join("lib")));
     (dir, p)
@@ -57,7 +78,7 @@ fn outline_and_status() {
     // Open the project from disk again.
     let root = p.root().to_path_buf();
     drop(p);
-    let p2 = Project::open(&root).unwrap();
+    let p2 = open(&root).unwrap();
     assert!(p2.data.board.outline.is_some());
 }
 
@@ -185,7 +206,7 @@ fn stackup_refuses_stranding_copper() {
 fn lock_blocks_second_open_only_for_live_other_process() {
     let (_t, p) = new_project();
     // The same process can open the project again (the pid is the same).
-    let again = Project::open(p.root());
+    let again = open(p.root());
     assert!(again.is_ok());
 }
 
@@ -260,7 +281,7 @@ fn shared_editor_and_engine_see_each_other() {
         .unwrap();
     // The viewer opens the same folder when the engine has the lock.
     let root = t.path().join("b");
-    let mut viewer = Project::open_shared(&root).unwrap();
+    let mut viewer = open_shared(&root).unwrap();
     let mut d = viewer.data.clone();
     d.placement.placements.get_mut("R1").unwrap().x = 9.0;
     let r = viewer.apply(d, "drag R1").unwrap();
@@ -402,7 +423,7 @@ fn kicad_footprint_import_and_board_round_trip() {
 
     // Import into a new project. The format comes from the file name.
     let dir2 = t.path().join("imported");
-    let mut q = Project::create(&dir2, "x").unwrap();
+    let mut q = create(&dir2, "x").unwrap();
     let r = q
         .import_board(ImportBoard {
             path: out.path.clone(),
@@ -575,7 +596,7 @@ fn add_pair(p: &mut Project, r: &str, s: &str, group: &str, n: &str) {
 fn layout_blocks_repeat_save_and_place() {
     let t = tempfile::tempdir().unwrap();
     Workspace::create(t.path(), "ws").unwrap();
-    let mut a = Project::create(&t.path().join("boards/a"), "a").unwrap();
+    let mut a = create(&t.path().join("boards/a"), "a").unwrap();
     add_pair(&mut a, "R1", "R2", "ch1", "1");
     add_pair(&mut a, "R3", "R4", "ch2", "2");
     let pl = |x: f64, y: f64, rotation: f64| Placement {
@@ -653,7 +674,7 @@ fn layout_blocks_repeat_save_and_place() {
         .unwrap_err();
     assert!(e.to_string().contains("replace"), "{e}");
 
-    let mut b = Project::create(&t.path().join("boards/b"), "b").unwrap();
+    let mut b = create(&t.path().join("boards/b"), "b").unwrap();
     add_pair(&mut b, "Q7", "Q8", "x", "X");
     b.place(Place {
         refdes: "Q8".into(),
@@ -908,7 +929,7 @@ fn library_makes_import_and_search_work_offline() {
     std::fs::copy(&step, shapes.join("SOT-23.step")).unwrap();
 
     // Board A has the sources. Its downloads go to the library.
-    let mut a = Project::create(&t.path().join("a"), "a").unwrap();
+    let mut a = create(&t.path().join("a"), "a").unwrap();
     a.set_providers(test_providers(&fixtures_parts(), &models));
     a.set_library(lib.clone());
     import(&mut a, "lcsc:C6186", Some("U1")).unwrap();
@@ -935,7 +956,7 @@ fn library_makes_import_and_search_work_offline() {
     // Board B has no sources but the same library.
     let empty = t.path().join("empty");
     std::fs::create_dir_all(&empty).unwrap();
-    let mut b = Project::create(&t.path().join("b"), "b").unwrap();
+    let mut b = create(&t.path().join("b"), "b").unwrap();
     b.set_providers(offline_providers(&empty));
     b.set_library(lib.clone());
     let r = import(&mut b, "lcsc:C6186", Some("U1")).unwrap();

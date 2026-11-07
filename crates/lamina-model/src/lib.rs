@@ -14,6 +14,7 @@ pub mod library;
 pub mod project;
 pub mod provider;
 pub mod sexpr;
+pub mod time;
 pub mod workspace;
 
 pub use error::Error;

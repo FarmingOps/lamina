@@ -10,17 +10,10 @@ description = "Lamina project operations"
 lamina-model.workspace = true
 lamina-ports.workspace = true
 lamina-footprint.workspace = true
-lamina-parts.workspace = true
 lamina-geom.workspace = true
 lamina-drc.workspace = true
 lamina-route.workspace = true
 lamina-scene.workspace = true
-lamina-render.workspace = true
-lamina-export.workspace = true
-lamina-step.workspace = true
-lamina-build.workspace = true
-lamina-kicad.workspace = true
-lamina-specctra.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true
@@ -28,6 +21,12 @@ sysinfo.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# The real adapters, for the tests only.
+lamina-parts.workspace = true
+lamina-kicad.workspace = true
+lamina-export.workspace = true
+lamina-step.workspace = true
+lamina-specctra.workspace = true
 
 [lints]
 workspace = true

@@ -133,7 +133,7 @@ pub fn read_project(path: &str) -> lamina_core::Result<Project> {
     if !model::ProjectData::is_project(&dir) {
         return Err(model::Error::NotAProject(dir));
     }
-    let mut p = Project::open_shared(&dir)?;
+    let mut p = lamina_wiring::open_shared(&dir)?;
     crate::register_checkers(&mut p);
     Ok(p)
 }
@@ -146,7 +146,7 @@ pub fn open_project(
 ) -> lamina_core::Result<Project> {
     let dir = PathBuf::from(path);
     if model::ProjectData::is_project(&dir) {
-        let mut p = Project::open(&dir)?;
+        let mut p = lamina_wiring::open(&dir)?;
         crate::register_checkers(&mut p);
         return Ok(p);
     }
@@ -159,7 +159,7 @@ pub fn open_project(
             .unwrap_or("board")
             .to_string()
     });
-    let mut p = Project::create(&dir, &name)?;
+    let mut p = lamina_wiring::create(&dir, &name)?;
     crate::register_checkers(&mut p);
     if modular {
         p.init_source()?;
@@ -200,7 +200,16 @@ impl Lamina {
     /// what each one holds.
     #[tool(annotations(title = "Formats", read_only_hint = true))]
     async fn formats(&self) -> Result<CallToolResult, McpError> {
-        self.with(|p| Ok(p.formats()))
+        let guard = self.project.lock().unwrap_or_else(|p| p.into_inner());
+        let infos = match guard.as_ref() {
+            Some(proj) => proj.formats(),
+            None => lamina_wiring::standard(None)
+                .formats
+                .iter()
+                .map(|f| f.info())
+                .collect(),
+        };
+        Ok(json_result(&infos))
     }
 
     /// Import a board file of another program into the open project (see
@@ -231,7 +240,16 @@ impl Lamina {
     /// design file it writes and the session file it reads back.
     #[tool(annotations(title = "Routers", read_only_hint = true))]
     async fn routers(&self) -> Result<CallToolResult, McpError> {
-        self.with(|p| Ok(p.routers()))
+        let guard = self.project.lock().unwrap_or_else(|p| p.into_inner());
+        let infos = match guard.as_ref() {
+            Some(proj) => proj.routers(),
+            None => lamina_wiring::standard(None)
+                .routers
+                .iter()
+                .map(|r| r.info())
+                .collect(),
+        };
+        Ok(json_result(&infos))
     }
 
     /// Write the design file of the board for an external autorouter (see
@@ -458,7 +476,7 @@ impl Lamina {
         let guard = self.project.lock().unwrap_or_else(|p| p.into_inner());
         let infos = match guard.as_ref() {
             Some(proj) => proj.provider_infos(),
-            None => Providers::standard(None).infos(),
+            None => Providers::new(lamina_wiring::standard(None).providers).infos(),
         };
         Ok(json_result(&infos))
     }
@@ -742,7 +760,7 @@ impl Lamina {
         let guard = self.project.lock().unwrap_or_else(|p| p.into_inner());
         let infos: Vec<lamina_core::ports::fab::FabInfo> = match guard.as_ref() {
             Some(proj) => proj.fabricators(),
-            None => lamina_core::wiring::standard(None)
+            None => lamina_wiring::standard(None)
                 .fabricators
                 .iter()
                 .map(|f| f.info())
@@ -816,7 +834,7 @@ impl Lamina {
             Some(proj) => proj.fetch_library(p),
             None => lamina_core::provider::fetch(
                 &model::Library::user(),
-                &Providers::standard(None),
+                &Providers::new(lamina_wiring::standard(None).providers),
                 &p,
             ),
         };

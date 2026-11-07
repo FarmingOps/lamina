@@ -1854,7 +1854,7 @@ impl Shell {
             OpenRequest::Path(p) => {
                 if let Some(r) = project_root(&p) {
                     // A project, or a file in a project. An import is not necessary.
-                    if lamina_core::board_file_kind(&p).is_none()
+                    if lamina_wiring::board_file_kind(&p).is_none()
                         || ProjectData::is_project(&p)
                         || p.file_name().is_some_and(|n| n == "board.json")
                     {
@@ -1862,7 +1862,7 @@ impl Shell {
                         return;
                     }
                 }
-                if lamina_core::board_file_kind(&p).is_none() {
+                if lamina_wiring::board_file_kind(&p).is_none() {
                     self.add_error = Some((
                         format!("{} is not a Lamina project or a board file", p.display()),
                         Instant::now(),
@@ -1883,7 +1883,7 @@ impl Shell {
                 let key = Some(p.clone());
                 self.spawn(format!("Import {name}…"), key, ctx, move || {
                     JobDone::Opened(
-                        lamina_core::open_board_path(&p)
+                        lamina_wiring::open_board_path(&p)
                             .map(|(dir, _)| dir)
                             .map_err(|e| e.to_string()),
                     )

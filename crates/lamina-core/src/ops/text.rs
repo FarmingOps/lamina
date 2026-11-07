@@ -1,6 +1,6 @@
 //! Small text helpers that several operations use.
 
-pub use lamina_parts::provider::today;
+pub use lamina_model::time::today;
 
 /// Compare pad numbers so that 2 < 10 and A2 < A10.
 pub fn natural(a: &str, b: &str) -> std::cmp::Ordering {

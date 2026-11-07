@@ -35,23 +35,46 @@ An agent made this board with the Lamina tools. It is an ESP32-S3 servo controll
 
 ## Crates
 
+Lamina is a hexagon. The domain in the middle knows only the board. The core runs the
+operations and talks to the outside through ports, which are traits. Adapters implement
+the ports. The programs plug the adapters in. The compiler keeps the rule: `lamina-core`
+does not depend on an adapter crate.
+
+Domain:
+
 | Crate | Contents |
 |---|---|
-| `lamina-model` | Data types, JSON schema, load and save of a project |
+| `lamina-model` | Data types, JSON schema, load and save of a project, the `Provider` port |
 | `lamina-geom` | Polygon operations, spatial index |
 | `lamina-footprint` | IPC-7351 footprints, footprints from a datasheet |
-| `lamina-parts` | Part search and import from LCSC, JLCPCB and EasyEDA |
-| `lamina-step` | The mesh loader adapter: STEP reader and tessellator, OBJ reader, mesh cache |
 | `lamina-drc` | Design rules, fab presets, DRC, connectivity |
 | `lamina-route` | Track routing, pour fill, autorouter |
-| `lamina-export` | The fabrication and STEP writer adapters: Gerber X2, Excellon, BOM, CPL, board STEP |
 | `lamina-scene` | Shapes to draw, for the 2D and 3D renderers |
-| `lamina-render` | PNG images in 2D and 3D. It implements the `Renderer` port |
-| `lamina-build` | Jsonnet board sources, workspaces. It implements the `DesignSource` port |
-| `lamina-kicad` | KiCad footprint and board import and export |
-| `lamina-core` | Project operations, one function for each tool |
+| `lamina-ports` | The ports: `BoardFormat`, `Fabricator`, `MeshLoader`, `StepWriter`, `Renderer`, `DesignSource`, `RouterExchange`, and the `Ports` bundle |
+| `lamina-core` | Project operations, one function for each tool. Calls ports only |
+
+Adapters:
+
+| Crate | Ports it implements |
+|---|---|
+| `lamina-parts` | `Provider` (LCSC / JLCPCB parts), `BoardFormat` (EasyEDA boards) |
+| `lamina-kicad` | `Provider` (KiCad libraries), `BoardFormat` (`.kicad_pcb` read and write) |
+| `lamina-export` | `BoardFormat` (Gerbers in), `Fabricator` (Gerber X2, Excellon, BOM, CPL), `StepWriter` |
+| `lamina-step` | `MeshLoader` (STEP and OBJ readers, mesh cache) |
+| `lamina-render` | `Renderer` (PNG images in 2D and 3D) |
+| `lamina-build` | `DesignSource` (Jsonnet board sources) |
+| `lamina-specctra` | `RouterExchange` (Specctra DSN and SES) |
+
+Programs:
+
+| Crate | Contents |
+|---|---|
+| `lamina-wiring` | The composition root: the standard adapters plugged into `Ports` |
 | `lamina-mcp` | The `lamina` program: MCP server and CLI |
 | `lamina-viewer` | The `lamina-viewer` program: 2D and 3D viewer and editor |
+
+To add a source of parts, a file format or a fabrication output, write one type that
+implements the port and add one line in `lamina-wiring`.
 
 `vendor/jrsonnet-stdlib` is a copy of the Jsonnet standard library without YAML and
 wasm-bindgen. The pinned versions of these two do not agree with egui and wgpu.

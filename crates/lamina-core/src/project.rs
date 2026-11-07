@@ -96,11 +96,6 @@ const PROJECT_GITIGNORE: &str = "cache/render/\ncache/build.json\n.lamina.lock\n
 
 impl Project {
     /// Create a new project in `dir`, which must not contain a project.
-    pub fn create(dir: &Path, name: &str) -> Result<Project> {
-        Project::create_with(dir, name, crate::wiring::standard(Some(dir)))
-    }
-
-    /// Like [`Project::create`], with the given ports.
     pub fn create_with(dir: &Path, name: &str, ports: Ports) -> Result<Project> {
         if ProjectData::is_project(dir) {
             return Err(Error::invalid(format!(
@@ -134,11 +129,6 @@ impl Project {
     }
 
     /// Open a project and get its lock, so that no other engine can write to it.
-    pub fn open(dir: &Path) -> Result<Project> {
-        Project::open_with(dir, crate::wiring::standard(Some(dir)))
-    }
-
-    /// Like [`Project::open`], with the given ports.
     pub fn open_with(dir: &Path, ports: Ports) -> Result<Project> {
         let lock = Lock::acquire(dir)?;
         let mut p = Project::open_shared_with(dir, ports)?;
@@ -148,11 +138,6 @@ impl Project {
 
     /// Open the project, but do not get the lock. The viewer uses this to edit
     /// at the same time as an agent. Both call [`Project::sync`] before each change.
-    pub fn open_shared(dir: &Path) -> Result<Project> {
-        Project::open_shared_with(dir, crate::wiring::standard(Some(dir)))
-    }
-
-    /// Like [`Project::open_shared`], with the given ports.
     pub fn open_shared_with(dir: &Path, ports: Ports) -> Result<Project> {
         ensure_built(&ports, dir)?;
         let stamp = disk_stamp(dir);

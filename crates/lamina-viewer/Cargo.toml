@@ -9,6 +9,7 @@ description = "Live 2D/3D viewer for Lamina projects"
 [dependencies]
 lamina-model.workspace = true
 lamina-core.workspace = true
+lamina-wiring.workspace = true
 lamina-geom.workspace = true
 lamina-drc.workspace = true
 lamina-scene.workspace = true

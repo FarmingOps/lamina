@@ -112,7 +112,7 @@ fn run(
     job: Job,
 ) -> Result<String, String> {
     if project.is_none() {
-        *project = Some(Project::open_shared(root).map_err(|e| e.to_string())?);
+        *project = Some(lamina_wiring::open_shared(root).map_err(|e| e.to_string())?);
     }
     let p = project.as_mut().unwrap();
     p.sync()

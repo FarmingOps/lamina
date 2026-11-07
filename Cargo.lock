@@ -2603,7 +2603,6 @@ dependencies = [
 name = "lamina-core"
 version = "0.1.0"
 dependencies = [
- "lamina-build",
  "lamina-drc",
  "lamina-export",
  "lamina-footprint",
@@ -2612,7 +2611,6 @@ dependencies = [
  "lamina-model",
  "lamina-parts",
  "lamina-ports",
- "lamina-render",
  "lamina-route",
  "lamina-scene",
  "lamina-specctra",
@@ -2692,6 +2690,7 @@ dependencies = [
  "clap",
  "embed-resource",
  "lamina-core",
+ "lamina-wiring",
  "rmcp",
  "schemars",
  "serde",
@@ -2808,9 +2807,26 @@ dependencies = [
  "lamina-render",
  "lamina-route",
  "lamina-scene",
+ "lamina-wiring",
  "notify",
  "rfd",
  "serde_json",
+]
+
+[[package]]
+name = "lamina-wiring"
+version = "0.1.0"
+dependencies = [
+ "lamina-build",
+ "lamina-core",
+ "lamina-export",
+ "lamina-kicad",
+ "lamina-model",
+ "lamina-parts",
+ "lamina-ports",
+ "lamina-render",
+ "lamina-specctra",
+ "lamina-step",
 ]
 
 [[package]]

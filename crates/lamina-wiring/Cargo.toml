@@ -1,0 +1,22 @@
+[package]
+name = "lamina-wiring"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "The composition root of Lamina: the standard adapters plugged into the ports"
+
+[dependencies]
+lamina-model.workspace = true
+lamina-ports.workspace = true
+lamina-core.workspace = true
+lamina-parts.workspace = true
+lamina-kicad.workspace = true
+lamina-export.workspace = true
+lamina-step.workspace = true
+lamina-render.workspace = true
+lamina-build.workspace = true
+lamina-specctra.workspace = true
+
+[lints]
+workspace = true

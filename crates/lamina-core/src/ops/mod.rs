@@ -22,7 +22,9 @@ pub use format::{
     BoardExported, ExportBoard, ExportForRouter, IMPORT_DIR, ImportBoard, ImportRouterSession,
     RouterExported,
 };
-pub use import::{board_file_kind, import_board_file, import_dir_for, open_board_path};
+pub use import::{
+    board_file_kind_in, import_board_file, import_dir_in, imports_dir, open_board_path_in,
+};
 pub use layout::{LayoutSaved, PlaceLayoutBlock, RepeatLayout, SaveLayoutBlock};
 pub use nets::{Connect, Disconnect, SetNets};
 pub use output::{AddNote, Export, ExportStep, Exported, ListNotes, ResolveNotes, StepExported};

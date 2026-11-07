@@ -184,7 +184,7 @@ impl App {
 
     fn export_fab(&mut self, root: PathBuf, force: bool) {
         self.spawn_bg(move || {
-            let r = lamina_core::Project::open_shared(&root).and_then(|p| {
+            let r = lamina_wiring::open_shared(&root).and_then(|p| {
                 p.export(lamina_core::Export {
                     dir: None,
                     force,
@@ -214,7 +214,7 @@ impl App {
 
     fn export_step(&mut self, root: PathBuf) {
         self.spawn_bg(move || {
-            let r = lamina_core::Project::open_shared(&root).and_then(|p| {
+            let r = lamina_wiring::open_shared(&root).and_then(|p| {
                 p.export_step(lamina_core::ExportStep {
                     path: None,
                     vias: false,
@@ -230,7 +230,7 @@ impl App {
 
     fn export_kicad(&mut self, root: PathBuf) {
         self.spawn_bg(move || {
-            let r = lamina_core::Project::open_shared(&root).and_then(|p| {
+            let r = lamina_wiring::open_shared(&root).and_then(|p| {
                 p.export_board(lamina_core::ExportBoard {
                     format: "kicad".into(),
                     path: None,

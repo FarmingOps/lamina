@@ -122,7 +122,7 @@ fn worker(root: PathBuf, ev: Receiver<(bool, bool)>, tx: Sender<Msg>, wake: impl
 
 fn build(root: &Path, prev: Option<&ProjectData>, models_changed: bool) -> Result<Loaded, String> {
     // Build a changed design source first. Its errors look like compile errors.
-    let ports = lamina_core::wiring::standard(Some(root));
+    let ports = lamina_wiring::standard(Some(root));
     let mut generated: Vec<String> = Vec::new();
     if let Some(src) = &ports.source {
         src.ensure_built(root).map_err(|e| e.to_string())?;
