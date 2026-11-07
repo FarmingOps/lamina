@@ -7,6 +7,7 @@ rust-version.workspace = true
 description = "Gerber, Excellon, BOM and pick-and-place export for Lamina"
 
 [dependencies]
+lamina-ports.workspace = true
 lamina-model.workspace = true
 lamina-geom.workspace = true
 lamina-scene.workspace = true

@@ -407,15 +407,7 @@ pub fn export_dsn(d: &ProjectData, name: &str, reroute_all: bool) -> String {
     sexpr::write(&root.done())
 }
 
-/// The routes from a session file.
-#[derive(Debug, Default)]
-pub struct Session {
-    pub tracks: Vec<Track>,
-    pub vias: Vec<Via>,
-    /// The nets that have routes in the session.
-    pub nets: BTreeSet<String>,
-    pub notes: Vec<String>,
-}
+pub use lamina_ports::router::Session;
 
 /// Read a Specctra session (`.ses`) that Freerouting wrote.
 pub fn import_ses(src: &str, d: &ProjectData) -> Result<Session, String> {

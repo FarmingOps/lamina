@@ -8,6 +8,7 @@ description = "Lamina project operations"
 
 [dependencies]
 lamina-model.workspace = true
+lamina-ports.workspace = true
 lamina-footprint.workspace = true
 lamina-parts.workspace = true
 lamina-geom.workspace = true

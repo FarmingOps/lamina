@@ -1,11 +1,11 @@
 //! 3D models: load and tessellate OBJ and STEP files, and keep a mesh cache.
 
-pub mod mesh;
+pub use lamina_ports::mesh;
 pub mod obj;
 pub mod p21;
 pub mod step;
 
-pub use mesh::{Mesh, MeshPart};
+pub use lamina_ports::mesh::{Mesh, MeshPart};
 
 use std::path::Path;
 

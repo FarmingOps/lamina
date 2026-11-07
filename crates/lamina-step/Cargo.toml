@@ -7,6 +7,7 @@ rust-version.workspace = true
 description = "Loads and tessellates STEP and OBJ models for Lamina"
 
 [dependencies]
+lamina-ports.workspace = true
 earcutr.workspace = true
 
 [lints]

@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use crate::mesh::{Mesh, MeshPart};
+use lamina_ports::mesh::{Mesh, MeshPart};
 
 fn srgb_to_linear(c: f32) -> f32 {
     if c <= 0.04045 {

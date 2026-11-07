@@ -2592,6 +2592,7 @@ dependencies = [
  "jrsonnet-stdlib",
  "lamina-drc",
  "lamina-model",
+ "lamina-ports",
  "schemars",
  "serde",
  "serde_json",
@@ -2610,6 +2611,7 @@ dependencies = [
  "lamina-kicad",
  "lamina-model",
  "lamina-parts",
+ "lamina-ports",
  "lamina-render",
  "lamina-route",
  "lamina-scene",
@@ -2642,6 +2644,7 @@ dependencies = [
  "lamina-footprint",
  "lamina-geom",
  "lamina-model",
+ "lamina-ports",
  "lamina-scene",
  "lamina-step",
  "zip",
@@ -2720,6 +2723,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lamina-ports"
+version = "0.1.0"
+dependencies = [
+ "lamina-geom",
+ "lamina-model",
+ "lamina-scene",
+ "schemars",
+ "serde",
+]
+
+[[package]]
 name = "lamina-render"
 version = "0.1.0"
 dependencies = [
@@ -2729,6 +2743,7 @@ dependencies = [
  "lamina-drc",
  "lamina-footprint",
  "lamina-model",
+ "lamina-ports",
  "lamina-scene",
  "lamina-step",
  "pollster 1.0.1",
@@ -2765,6 +2780,7 @@ version = "0.1.0"
 dependencies = [
  "lamina-kicad",
  "lamina-model",
+ "lamina-ports",
  "schemars",
  "serde",
 ]
@@ -2774,6 +2790,7 @@ name = "lamina-step"
 version = "0.1.0"
 dependencies = [
  "earcutr",
+ "lamina-ports",
 ]
 
 [[package]]

@@ -12,35 +12,7 @@ use lamina_geom::Owner;
 use lamina_geom::prim::Prim;
 use lamina_model::*;
 
-#[derive(Debug, Clone)]
-pub struct StepOptions {
-    /// Also drill the vias through the board. This is off by default, because
-    /// there are many tiny holes.
-    pub vias: bool,
-    /// Include the part models (default true).
-    pub parts: bool,
-}
-
-impl Default for StepOptions {
-    fn default() -> Self {
-        StepOptions {
-            vias: false,
-            parts: true,
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct StepExport {
-    /// The file, as bytes and not as text. Copied part files can have names in
-    /// other encodings. The export keeps these names exactly as they are.
-    pub bytes: Vec<u8>,
-    /// The number of parts with their exact STEP model.
-    pub exact: usize,
-    /// The number of parts as faceted meshes.
-    pub meshed: usize,
-    pub notes: Vec<String>,
-}
+pub use lamina_ports::mesh::{StepExport, StepOptions};
 
 // ---------------------------------------------------------------- writer
 

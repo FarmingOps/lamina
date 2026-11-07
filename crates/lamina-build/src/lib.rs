@@ -57,23 +57,7 @@ pub struct Input {
     pub hash: String,
 }
 
-/// The result of a build.
-#[derive(Debug, Clone, Default, Serialize, JsonSchema)]
-pub struct Report {
-    pub source: String,
-    pub owns: Vec<String>,
-    /// Files that the build wrote because their content changed.
-    pub written: Vec<String>,
-    pub parts: usize,
-    pub nets: usize,
-    pub added_parts: Vec<String>,
-    pub removed_parts: Vec<String>,
-    /// Placements removed because their part was removed.
-    pub unplaced: Vec<String>,
-    pub warnings: Vec<String>,
-    /// Every file the build read.
-    pub inputs: Vec<String>,
-}
+pub use lamina_ports::source::Report;
 
 pub fn source_path(root: &Path) -> PathBuf {
     root.join(SOURCE_FILE)

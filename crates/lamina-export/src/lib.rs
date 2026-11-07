@@ -15,10 +15,7 @@ use lamina_geom::prim::Prim;
 use lamina_model::*;
 use lamina_scene::{Scene2D, SceneLayer};
 
-pub struct Output {
-    pub name: String,
-    pub contents: Vec<u8>,
-}
+pub use lamina_ports::fab::Output;
 
 fn copper_ext(i: u8, n: u8) -> (String, String) {
     let c = Copper::from_index(i, n);

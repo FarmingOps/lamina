@@ -34,21 +34,7 @@ impl Providers {
     /// The standard set: the parts vendor and the KiCad libraries. The local
     /// KiCad roots come from `lamina.json` of the workspace that holds `board`.
     pub fn standard(board: Option<&Path>) -> Providers {
-        let ws = board.and_then(Workspace::find);
-        let fp_dirs = ws
-            .as_ref()
-            .map(|w| w.kicad_footprint_dirs())
-            .unwrap_or_default();
-        let m_dirs = ws
-            .as_ref()
-            .map(|w| w.kicad_model_dirs())
-            .unwrap_or_default();
-        Providers::new(vec![
-            Arc::new(lamina_parts::provider::LcscProvider::online()),
-            Arc::new(lamina_kicad::provider::KicadProvider::online(
-                fp_dirs, m_dirs,
-            )),
-        ])
+        Providers::new(crate::wiring::standard(board).providers)
     }
 
     pub fn get(&self, id: &str) -> Option<&dyn Provider> {

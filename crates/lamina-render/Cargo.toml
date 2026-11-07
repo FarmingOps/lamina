@@ -7,6 +7,7 @@ rust-version.workspace = true
 description = "2D and 3D renderer for Lamina"
 
 [dependencies]
+lamina-ports.workspace = true
 lamina-model.workspace = true
 lamina-scene.workspace = true
 lamina-step.workspace = true

@@ -3,8 +3,8 @@
 
 use std::collections::HashMap;
 
-use crate::mesh::{Mesh, MeshPart};
 use crate::p21::{Arg, Entity, parse};
+use lamina_ports::mesh::{Mesh, MeshPart};
 
 type V3 = [f64; 3];
 

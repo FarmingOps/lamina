@@ -1,0 +1,17 @@
+[package]
+name = "lamina-ports"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "The ports of Lamina: the traits that adapters implement and the core calls"
+
+[dependencies]
+lamina-model.workspace = true
+lamina-geom.workspace = true
+lamina-scene.workspace = true
+serde.workspace = true
+schemars.workspace = true
+
+[lints]
+workspace = true

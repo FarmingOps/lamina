@@ -148,15 +148,7 @@ fn geoms_mask(items: &[Geom], w: u32, h: u32, ts: Transform) -> Option<Mask> {
     Some(Mask::from_pixmap(pm.as_ref(), tiny_skia::MaskType::Alpha))
 }
 
-#[derive(Debug, Clone)]
-pub struct Options2D {
-    pub width: u32,
-    pub height: u32,
-    /// Layers to draw (default: all).
-    pub layers: Option<Vec<SceneLayer>>,
-    /// Area of the board to show (default: whole board).
-    pub region: Option<Rect>,
-}
+pub use lamina_ports::render::Options2D;
 
 /// Technical view: each layer in its own colour.
 pub fn render_layers(s: &Scene2D, opt: &Options2D) -> Option<Pixmap> {
