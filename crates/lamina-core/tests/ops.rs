@@ -646,3 +646,53 @@ fn kicad_board_models_fall_back_and_resolve_project_paths() {
     assert!(!hole.has_body());
     assert!(fp.has_body());
 }
+
+#[test]
+fn frame_3d_fits_a_part_a_pad_or_a_region() {
+    let (_t, mut p) = new_project();
+    add_resistor(&mut p, "R1");
+    p.place(Place {
+        refdes: "R1".into(),
+        x: 10.0,
+        y: 5.0,
+        rotation: Some(90.0),
+        side: None,
+        locked: None,
+        strict: false,
+    })
+    .unwrap();
+    // The part: its pads turned by 90 degrees, plus a 1.5 mm margin.
+    let (lo, hi) = p
+        .frame_3d(None, Some(&Target::Name("R1".into())))
+        .unwrap()
+        .unwrap();
+    assert!((lo[0] - 8.05).abs() < 1e-3 && (hi[0] - 11.95).abs() < 1e-3);
+    assert!((lo[1] - 2.25).abs() < 1e-3 && (hi[1] - 7.75).abs() < 1e-3);
+    assert_eq!(lo[2], 0.0);
+    assert!((hi[2] - 3.6).abs() < 1e-3);
+    // A pad: a 5 mm box around its centre.
+    let (lo, hi) = p
+        .frame_3d(None, Some(&Target::Name("R1.1".into())))
+        .unwrap()
+        .unwrap();
+    assert!((lo[0] - 7.5).abs() < 1e-3 && (hi[0] - 12.5).abs() < 1e-3);
+    assert!((lo[1] - 1.7).abs() < 1e-3 && (hi[1] - 6.7).abs() < 1e-3);
+    // A region wins over the focus.
+    let r = Rect {
+        min: Point::new(1.0, 2.0),
+        max: Point::new(3.0, 4.0),
+    };
+    let (lo, hi) = p
+        .frame_3d(Some(&r), Some(&Target::Name("R1".into())))
+        .unwrap()
+        .unwrap();
+    assert_eq!((lo[0], lo[1], hi[0], hi[1]), (1.0, 2.0, 3.0, 4.0));
+    // No focus and no region: fit the whole board.
+    assert!(p.frame_3d(None, None).unwrap().is_none());
+    // Unknown names are refused.
+    assert!(p.frame_3d(None, Some(&Target::Name("R9".into()))).is_err());
+    assert!(
+        p.frame_3d(None, Some(&Target::Name("R1.7".into())))
+            .is_err()
+    );
+}

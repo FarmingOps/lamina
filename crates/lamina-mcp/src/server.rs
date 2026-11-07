@@ -728,8 +728,10 @@ impl Lamina {
     }
     /// Render the board to PNG and return it as an image. Views: `layers`
     /// (technical view, select the layers), `top` / `bottom` (the finished
-    /// board), `3d` (perspective with part models, set yaw and pitch). The
-    /// tool saves the PNG in cache/render.
+    /// board), `3d` (perspective with part models). In 3D, `yaw` and `pitch`
+    /// turn the camera, `focus` points it at a part, a pad or a point,
+    /// `region` fits a box, `zoom` moves it closer, and `hide` / `only`
+    /// select the parts to draw. The tool saves the PNG in cache/render.
     #[tool(annotations(title = "Render", read_only_hint = true))]
     async fn render(&self, Parameters(p): Parameters<Render>) -> Result<CallToolResult, McpError> {
         let mut guard = self.project.lock().unwrap_or_else(|p| p.into_inner());

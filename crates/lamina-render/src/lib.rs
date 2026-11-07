@@ -17,8 +17,15 @@ pub enum Snapshot {
     Layers,
     /// Finished board seen from one side.
     Side(Side),
-    /// Perspective 3D view.
-    View3D { yaw: f32, pitch: f32 },
+    /// Perspective 3D view. `frame` is the box that the camera fits, or the
+    /// whole scene if it is `None`. `zoom` divides the camera distance: 2 is
+    /// two times closer.
+    View3D {
+        yaw: f32,
+        pitch: f32,
+        frame: Option<([f32; 3], [f32; 3])>,
+        zoom: f32,
+    },
 }
 
 /// Render a PNG. 2D views work without a GPU. 3D views need a GPU.
@@ -47,14 +54,21 @@ pub fn snapshot(
                 .ok_or("the image size is not valid")?;
             Ok((raster::png(&pm)?, Vec::new()))
         }
-        Snapshot::View3D { yaw, pitch } => {
+        Snapshot::View3D {
+            yaw,
+            pitch,
+            frame,
+            zoom,
+        } => {
             let gpu = Gpu::headless()?;
             let mut cache = MeshCache::default();
             let scene = gpu.upload_3d(s3, s2, &mut cache);
             let aspect = width as f32 / height.max(1) as f32;
-            let mut cam = Camera::frame_aspect(scene.bounds.0, scene.bounds.1, aspect);
+            let (lo, hi) = frame.unwrap_or(scene.bounds);
+            let mut cam = Camera::frame_aspect(lo, hi, aspect);
             cam.yaw = yaw;
             cam.pitch = pitch;
+            cam.distance /= zoom.clamp(0.1, 100.0);
             let t = gpu.target(width, height);
             gpu.draw_3d(&t, &scene, &cam);
             let rgba = gpu.read_rgba(&t)?;
