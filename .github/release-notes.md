@@ -1,3 +1,12 @@
+## Changes in 0.2.0
+
+- Providers: parts, footprints and 3D models come from providers. A part is `provider:id`, for example `lcsc:C6186` or `kicad:LED_SMD:LED_0603_1608Metric`. The tools are `providers`, `search_parts`, `import_part` and `import_parts`. The vendor-named tools are gone.
+- Part library: each download also goes into a library on your computer (`LAMINA_LIB`, `%LOCALAPPDATA%\lamina\lib` or `~/.lamina/lib`). Imports look in the project cache, then in the library, then online. `lamina fetch` fills the library before you work without a network.
+- Board formats and routers: `formats`, `import_board`, `export_board`, `routers`, `export_for_router` and `import_router_session` replace the format-named tools.
+- Fabrication: `fabricators` lists the outputs; `export` takes one by id.
+- 3D view: `render` can focus a part, a pad or a region, zoom, hide parts and show only some parts.
+- Architecture: the core talks to the outside world through ports only. A new source, format or output is one type plus one line in `lamina-wiring`.
+
 Each archive has two programs, the README and the licence files:
 
 - `lamina`: the MCP server and the command line tool.
