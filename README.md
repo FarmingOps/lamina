@@ -2,7 +2,12 @@
 
 # Lamina
 
-Lamina is a PCB layout program that an AI coding agent operates through MCP tools, while you watch the board in a live viewer and edit it yourself when you want.
+PCB tools were made for mouse and keyboard. Lamina was made for an agent.
+
+Lamina is a PCB layout program that an AI coding agent operates through MCP tools. The
+agent searches parts, places them, routes the tracks, runs the design rules and exports
+the fab files. You watch every change in a live 2D and 3D viewer, and you take the mouse
+whenever you want.
 
 - `lamina` is an MCP server. An agent uses its tools to add parts and nets, place the
   parts, route the tracks, do a DRC and export the fab files.
