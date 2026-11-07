@@ -16,6 +16,11 @@ on:
       - "assets/**"
       - ".github/release-notes.md"
 
+# A new push cancels the run of the previous push on the same branch.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Test (${{ matrix.os }})
