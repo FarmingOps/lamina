@@ -32,6 +32,12 @@ fn standard_dirs(kind: &str) -> Vec<PathBuf> {
             out.push(PathBuf::from(format!(
                 r"C:\Program Files\KiCad\{v}.0\share\kicad\{kind}"
             )));
+            // An install for the current user only (winget).
+            if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+                out.push(
+                    PathBuf::from(local).join(format!(r"Programs\KiCad\{v}.0\share\kicad\{kind}")),
+                );
+            }
         }
     } else if cfg!(target_os = "macos") {
         out.push(PathBuf::from(format!(
