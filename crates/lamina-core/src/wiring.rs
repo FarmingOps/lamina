@@ -29,6 +29,12 @@ pub fn standard(board: Option<&Path>) -> Ports {
                 fp_dirs, m_dirs,
             )),
         ],
+        formats: vec![
+            Arc::new(lamina_kicad::KicadFormat),
+            Arc::new(lamina_parts::EasyedaFormat),
+            Arc::new(lamina_export::GerberFormat),
+        ],
+        routers: vec![Arc::new(lamina_specctra::SpecctraExchange)],
         ..Ports::default()
     }
 }

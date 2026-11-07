@@ -2,6 +2,7 @@
 
 pub mod fab_import;
 pub mod gerber;
+pub mod gerber_format;
 pub mod gerber_in;
 pub mod reader;
 pub mod step_out;
@@ -15,6 +16,7 @@ use lamina_geom::prim::Prim;
 use lamina_model::*;
 use lamina_scene::{Scene2D, SceneLayer};
 
+pub use gerber_format::GerberFormat;
 pub use lamina_ports::fab::Output;
 
 fn copper_ext(i: u8, n: u8) -> (String, String) {

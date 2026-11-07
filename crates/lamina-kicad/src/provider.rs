@@ -84,7 +84,9 @@ impl Provider for KicadProvider {
             description: "Generic footprints by package, with generic 3D models. The id \
                           is `Library:Name`, a footprint name in the local libraries, or \
                           the path of a `.kicad_mod` file. Search looks in the local \
-                          libraries only."
+                          libraries only. A model id is `Library:Name` or the path of \
+                          a STEP file, with `?offset=x,y,z&rotation=x,y,z&scale=x,y,z` \
+                          when the placement is not the identity."
                 .into(),
             example: "kicad:LED_SMD:LED_0603_1608Metric".into(),
             online: true,
@@ -197,21 +199,135 @@ impl Provider for KicadProvider {
     }
 
     fn model(&self, id: &str) -> Result<ModelFile, String> {
-        let (lib, name) = id
-            .split_once(':')
-            .or_else(|| id.split_once('/'))
-            .filter(|(l, n)| !l.is_empty() && !n.is_empty())
-            .ok_or_else(|| {
-                format!("`{id}` must be `Library:Name`, for example `LED_SMD:LED_0603_1608Metric`.")
-            })?;
-        let (file, bytes) = self.model_bytes(&format!("{lib}.3dshapes/{name}.step"), None, true)?;
+        let ModelRequest {
+            spec,
+            offset,
+            rotation,
+            scale,
+        } = parse_model_id(id)?;
+        let as_path = Path::new(&spec);
+        let (file, bytes) = if as_path.is_absolute() {
+            let (lib, name) = library::model_lib_name(&spec)
+                .ok_or_else(|| format!("`{spec}` is not a model path."))?;
+            let is_step = as_path
+                .extension()
+                .is_some_and(|e| matches!(e.to_str(), Some("step" | "STEP" | "stp" | "STP")));
+            if !is_step {
+                return Err(format!(
+                    "only a VRML model was found ({spec}); Lamina does not read VRML"
+                ));
+            }
+            let b = std::fs::read(as_path).map_err(|e| format!("{spec}: {e}"))?;
+            (format!("{lib}/{name}.step"), b)
+        } else {
+            let (lib, name) = spec
+                .split_once(':')
+                .or_else(|| spec.split_once('/'))
+                .filter(|(l, n)| !l.is_empty() && !n.is_empty())
+                .ok_or_else(|| {
+                    format!(
+                        "`{spec}` must be `Library:Name`, for example `LED_SMD:LED_0603_1608Metric`."
+                    )
+                })?;
+            self.model_bytes(&format!("{lib}.3dshapes/{name}.step"), None, true)?
+        };
         Ok(ModelFile {
             name: file,
             bytes,
-            offset: [0.0; 3],
-            rotation: [0.0; 3],
-            scale: [1.0; 3],
+            offset,
+            rotation,
+            scale,
             height: None,
         })
+    }
+}
+
+/// A model id for [`Provider::model`]: `Library:Name`, or the full path of a
+/// STEP file, with the placement after `?` when it is not the identity:
+/// `offset=x,y,z&rotation=x,y,z&scale=x,y,z`.
+pub fn model_id(spec: &str, offset: [f64; 3], rotation: [f64; 3], scale: [f64; 3]) -> String {
+    let xyz = |v: [f64; 3]| format!("{},{},{}", v[0], v[1], v[2]);
+    let mut q = Vec::new();
+    if offset != [0.0; 3] {
+        q.push(format!("offset={}", xyz(offset)));
+    }
+    if rotation != [0.0; 3] {
+        q.push(format!("rotation={}", xyz(rotation)));
+    }
+    if scale != [1.0; 3] {
+        q.push(format!("scale={}", xyz(scale)));
+    }
+    if q.is_empty() {
+        spec.to_string()
+    } else {
+        format!("{spec}?{}", q.join("&"))
+    }
+}
+
+/// A model id, read back: the spec and the placement.
+struct ModelRequest {
+    spec: String,
+    offset: [f64; 3],
+    rotation: [f64; 3],
+    scale: [f64; 3],
+}
+
+/// Split a model id into its spec and its placement. See [`model_id`].
+fn parse_model_id(id: &str) -> Result<ModelRequest, String> {
+    let id = id.trim();
+    let (spec, query) = id.split_once('?').unwrap_or((id, ""));
+    let mut offset = [0.0; 3];
+    let mut rotation = [0.0; 3];
+    let mut scale = [1.0; 3];
+    for item in query.split('&').filter(|s| !s.is_empty()) {
+        let (key, value) = item
+            .split_once('=')
+            .ok_or_else(|| format!("`{item}` in `{id}` is not `key=x,y,z`."))?;
+        let mut v = [0.0; 3];
+        let parts: Vec<&str> = value.split(',').collect();
+        if parts.len() != 3 {
+            return Err(format!("`{key}` in `{id}` needs three numbers."));
+        }
+        for (slot, s) in v.iter_mut().zip(parts) {
+            *slot = s
+                .trim()
+                .parse()
+                .map_err(|_| format!("`{s}` in `{id}` is not a number."))?;
+        }
+        match key {
+            "offset" => offset = v,
+            "rotation" => rotation = v,
+            "scale" => scale = v,
+            _ => return Err(format!("`{key}` in `{id}` is not a placement key.")),
+        }
+    }
+    Ok(ModelRequest {
+        spec: spec.to_string(),
+        offset,
+        rotation,
+        scale,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_ids_round_trip() {
+        let id = model_id("Lib:Name", [0.0, 0.0, 1.0], [0.0; 3], [1.0; 3]);
+        assert_eq!(id, "Lib:Name?offset=0,0,1");
+        let m = parse_model_id(&id).unwrap();
+        assert_eq!(m.spec, "Lib:Name");
+        assert_eq!(
+            (m.offset, m.rotation, m.scale),
+            ([0.0, 0.0, 1.0], [0.0; 3], [1.0; 3])
+        );
+        assert_eq!(
+            model_id("Lib:Name", [0.0; 3], [0.0; 3], [1.0; 3]),
+            "Lib:Name"
+        );
+        assert!(parse_model_id("Lib:Name?offset=1,2").is_err());
+        assert!(parse_model_id("Lib:Name?tilt=1,2,3").is_err());
     }
 }

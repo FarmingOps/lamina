@@ -1,26 +1,14 @@
-//! Open a board file from another program. Lamina imports a KiCad board, an
-//! EasyEDA board or a set of Gerbers into a Lamina project folder.
+//! Open a board file from another program. Lamina imports the file into a
+//! Lamina project folder through the board format that detects it.
 
 use std::path::{Path, PathBuf};
 
 use lamina_model::error::Result;
 use lamina_model::*;
+use lamina_ports::Ports;
 
-use crate::ops::{ImportEasyedaBoard, ImportGerbers, ImportKicadBoard};
+use crate::ops::ImportBoard;
 use crate::project::{OpResult, Project};
-
-/// The types of board files that Lamina can open directly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BoardFile {
-    Kicad,
-    Easyeda,
-    Gerbers,
-}
-
-const GERBER_EXT: &[&str] = &[
-    "gbr", "ger", "gtl", "gbl", "gto", "gbo", "gts", "gbs", "gtp", "gbp", "gko", "gm1", "drl",
-    "xln", "exc", "art", "pho",
-];
 
 fn ext(p: &Path) -> String {
     p.extension()
@@ -29,23 +17,23 @@ fn ext(p: &Path) -> String {
         .to_ascii_lowercase()
 }
 
-/// The type of `p`, if Lamina can open it: a `.kicad_pcb`, an EasyEDA `.json`,
-/// a Gerber zip, or a folder (or file) of Gerbers.
-pub fn board_file_kind(p: &Path) -> Option<BoardFile> {
-    if p.is_dir() {
-        let has_gerbers = std::fs::read_dir(p)
-            .ok()?
-            .flatten()
-            .any(|e| GERBER_EXT.contains(&ext(&e.path()).as_str()));
-        return has_gerbers.then_some(BoardFile::Gerbers);
-    }
-    match ext(p).as_str() {
-        "kicad_pcb" => Some(BoardFile::Kicad),
-        "json" if !ProjectData::is_project(p.parent()?) => Some(BoardFile::Easyeda),
-        "zip" => Some(BoardFile::Gerbers),
-        e if GERBER_EXT.contains(&e) => Some(BoardFile::Gerbers),
-        _ => None,
-    }
+/// The id of the format that reads `p`, if one of the standard formats does.
+pub fn board_file_kind(p: &Path) -> Option<String> {
+    board_file_kind_in(&crate::wiring::standard(None), p)
+}
+
+/// Like [`board_file_kind`], with the given ports.
+pub fn board_file_kind_in(ports: &Ports, p: &Path) -> Option<String> {
+    ports.format_for(p).map(|f| f.info().id)
+}
+
+/// The path that holds the whole board for `p`: the file, or the folder of
+/// a file that is one of a set.
+fn source_root(ports: &Ports, p: &Path) -> PathBuf {
+    ports
+        .format_for(p)
+        .map(|f| f.source_root(p))
+        .unwrap_or_else(|| p.to_path_buf())
 }
 
 /// 64-bit FNV-1a. It gives the same result in all builds, but the std hasher does not.
@@ -73,15 +61,7 @@ pub fn import_dir_for(file: &Path) -> PathBuf {
 /// Like [`import_dir_for`], but in `base`.
 pub fn import_dir_in(base: &Path, file: &Path) -> PathBuf {
     let abs = std::path::absolute(file).unwrap_or_else(|_| file.to_path_buf());
-    // For a single Gerber file, use its folder.
-    let src = if !abs.is_dir()
-        && matches!(board_file_kind(&abs), Some(BoardFile::Gerbers))
-        && ext(&abs) != "zip"
-    {
-        abs.parent().map(Path::to_path_buf).unwrap_or(abs)
-    } else {
-        abs
-    };
+    let src = source_root(&crate::wiring::standard(None), &abs);
     let stem: String = src
         .file_stem()
         .and_then(|s| s.to_str())
@@ -106,67 +86,47 @@ fn modified(p: &Path) -> Option<std::time::SystemTime> {
 /// The time of the last change to a source. For a file, this is the time of
 /// the file. For a folder, it is the time of the newest file in it, because
 /// the time of a folder does not change when a file in it is edited in place.
-fn source_modified(p: &Path) -> Option<std::time::SystemTime> {
-    let dir = if p.is_dir() {
-        Some(p.to_path_buf())
-    } else if matches!(board_file_kind(p), Some(BoardFile::Gerbers)) && ext(p) != "zip" {
-        p.parent().map(Path::to_path_buf)
-    } else {
-        None
-    };
-    match dir {
-        Some(d) => std::fs::read_dir(&d)
+fn source_modified(ports: &Ports, p: &Path) -> Option<std::time::SystemTime> {
+    let root = source_root(ports, p);
+    if root.is_dir() {
+        std::fs::read_dir(&root)
             .ok()?
             .flatten()
             .filter_map(|e| modified(&e.path()))
-            .max(),
-        None => modified(p),
+            .max()
+    } else {
+        modified(&root)
     }
 }
 
 /// Import `file` into `dir`. This replaces a board that is already there.
 pub fn import_board_file(file: &Path, dir: &Path) -> Result<OpResult> {
-    let kind = board_file_kind(file).ok_or_else(|| {
-        Error::invalid(format!(
-            "{} is not a board file that Lamina can open. \
-             Use a KiCad .kicad_pcb file, an EasyEDA .json file or Gerbers.",
-            file.display()
-        ))
-    })?;
+    let ports = crate::wiring::standard(Some(dir));
+    if board_file_kind_in(&ports, file).is_none() {
+        let ids: Vec<String> = ports.formats.iter().map(|f| f.info().id).collect();
+        return Err(Error::invalid(format!(
+            "{} is not a board file that Lamina can open. The formats are: {}.",
+            file.display(),
+            ids.join(", ")
+        )));
+    }
     let name = file
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("board")
         .to_string();
     let mut p = if ProjectData::is_project(dir) {
-        Project::open(dir)?
+        Project::open_with(dir, ports)?
     } else {
-        Project::create(dir, &name)?
+        Project::create_with(dir, &name, ports)?
     };
-    let path = if kind == BoardFile::Gerbers && !file.is_dir() && ext(file) != "zip" {
-        file.parent().unwrap_or(file).to_string_lossy().into_owned()
-    } else {
-        file.to_string_lossy().into_owned()
-    };
-    match kind {
-        BoardFile::Kicad => p.import_kicad_board(ImportKicadBoard {
-            path,
-            models: true,
-            online: true,
-            replace: true,
-            strict: false,
-        }),
-        BoardFile::Easyeda => p.import_easyeda_board(ImportEasyedaBoard {
-            path,
-            models: true,
-            replace: true,
-            strict: false,
-        }),
-        BoardFile::Gerbers => p.import_gerbers(ImportGerbers {
-            path,
-            replace: true,
-        }),
-    }
+    p.import_board(ImportBoard {
+        path: file.to_string_lossy().into_owned(),
+        format: None,
+        models: true,
+        replace: true,
+        strict: false,
+    })
 }
 
 /// The Lamina project for `path`. If `path` is a project folder, this is the
@@ -189,7 +149,8 @@ pub fn open_board_path_in(base: &Path, path: &Path) -> Result<(PathBuf, Option<O
     }
     let dir = import_dir_in(base, path);
     let stamp = dir.join(".imported");
-    let fresh = match (source_modified(path), modified(&stamp)) {
+    let ports = crate::wiring::standard(None);
+    let fresh = match (source_modified(&ports, path), modified(&stamp)) {
         (Some(src), Some(done)) => done >= src && ProjectData::is_project(&dir),
         _ => false,
     };
@@ -211,13 +172,13 @@ mod tests {
         let t = tempfile::tempdir().unwrap();
         let k = t.path().join("b.kicad_pcb");
         std::fs::write(&k, "").unwrap();
-        assert_eq!(board_file_kind(&k), Some(BoardFile::Kicad));
+        assert_eq!(board_file_kind(&k).as_deref(), Some("kicad"));
         let g = t.path().join("gerbers");
         std::fs::create_dir_all(&g).unwrap();
         assert_eq!(board_file_kind(&g), None);
         std::fs::write(g.join("b.GTL"), "").unwrap();
-        assert_eq!(board_file_kind(&g), Some(BoardFile::Gerbers));
-        assert_eq!(board_file_kind(&g.join("b.GTL")), Some(BoardFile::Gerbers));
+        assert_eq!(board_file_kind(&g).as_deref(), Some("gerber"));
+        assert_eq!(board_file_kind(&g.join("b.GTL")).as_deref(), Some("gerber"));
         // A single Gerber file uses the import of its folder.
         assert_eq!(import_dir_for(&g.join("b.GTL")), import_dir_for(&g));
         assert_ne!(import_dir_for(&k), import_dir_for(&g));

@@ -37,38 +37,24 @@ enum Cmd {
     },
     /// Build the design.jsonnet of a board into its JSON files.
     Build { dir: PathBuf },
-    /// Import a KiCad board file into a project. If the project does not exist,
-    /// create it.
-    ImportKicad {
+    /// Import a board file of another program into a project. If the project
+    /// does not exist, create it. Run `lamina formats` for the formats.
+    Import {
+        /// The board file, or a folder or zip of Gerber files.
         file: PathBuf,
         dir: PathBuf,
-        /// Download missing 3D models from the official KiCad libraries.
+        /// The format id. The default is the format that detects the file.
         #[arg(long)]
-        online: bool,
-        /// Replace a board that is already in the project.
-        #[arg(long)]
-        replace: bool,
-    },
-    /// Import an EasyEDA PCB JSON file into a project. If the project does not
-    /// exist, create it.
-    ImportEasyeda {
-        file: PathBuf,
-        dir: PathBuf,
-        /// Do not download 3D models from EasyEDA.
+        format: Option<String>,
+        /// Do not get the 3D models.
         #[arg(long)]
         no_models: bool,
         /// Replace a board that is already in the project.
         #[arg(long)]
         replace: bool,
     },
-    /// Import Gerber and drill files (a folder or a zip) into a project as artwork.
-    ImportGerbers {
-        path: PathBuf,
-        dir: PathBuf,
-        /// Replace a board that is already in the project.
-        #[arg(long)]
-        replace: bool,
-    },
+    /// List the board formats that Lamina reads or writes.
+    Formats,
     /// Write the assembled board as a STEP file.
     ExportStep {
         dir: PathBuf,
@@ -81,23 +67,37 @@ enum Cmd {
         #[arg(long)]
         board_only: bool,
     },
-    /// Write a Specctra DSN for an external autorouter.
-    ExportDsn {
+    /// Write a project as a board file of another program.
+    ExportBoard {
         dir: PathBuf,
+        /// The format id, for example `kicad`.
+        #[arg(long)]
+        format: String,
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Write the design file for an external autorouter.
+    ExportRouting {
+        dir: PathBuf,
+        /// The router id, for example `specctra`.
+        #[arg(long)]
+        router: String,
         #[arg(long)]
         out: Option<PathBuf>,
         /// Do not include the existing routes.
         #[arg(long)]
         reroute_all: bool,
     },
-    /// Read a Specctra session (.ses) back into a project.
-    ImportSes { file: PathBuf, dir: PathBuf },
-    /// Write a project as a .kicad_pcb file.
-    ExportKicad {
+    /// Read the session file of an external autorouter back into a project.
+    ImportRouting {
         dir: PathBuf,
+        file: PathBuf,
+        /// The router id, for example `specctra`.
         #[arg(long)]
-        out: Option<PathBuf>,
+        router: String,
     },
+    /// List the external autorouters that Lamina exchanges files with.
+    Routers,
     /// Copy the layout of one block to other blocks. A block is a group name
     /// or a list of refdes with commas between them (`D1,R1`).
     RepeatLayout {
@@ -203,31 +203,10 @@ fn main() -> anyhow::Result<()> {
             println!("{}", serde_json::to_string_pretty(&p.status())?);
             Ok(())
         }
-        Cmd::ImportKicad {
+        Cmd::Import {
             file,
             dir,
-            online,
-            replace,
-        } => {
-            let path = dir.to_string_lossy().to_string();
-            let name = file
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .map(str::to_string);
-            let mut p = server::open_project(&path, true, name, false)?;
-            let r = p.import_kicad_board(lamina_core::ImportKicadBoard {
-                path: file.to_string_lossy().to_string(),
-                models: true,
-                online,
-                replace,
-                strict: false,
-            })?;
-            println!("{}", serde_json::to_string_pretty(&r)?);
-            Ok(())
-        }
-        Cmd::ImportEasyeda {
-            file,
-            dir,
+            format,
             no_models,
             replace,
         } => {
@@ -237,13 +216,26 @@ fn main() -> anyhow::Result<()> {
                 .and_then(|s| s.to_str())
                 .map(str::to_string);
             let mut p = server::open_project(&path, true, name, false)?;
-            let r = p.import_easyeda_board(lamina_core::ImportEasyedaBoard {
+            let r = p.import_board(lamina_core::ImportBoard {
                 path: file.to_string_lossy().to_string(),
+                format,
                 models: !no_models,
                 replace,
                 strict: false,
             })?;
             println!("{}", serde_json::to_string_pretty(&r)?);
+            Ok(())
+        }
+        Cmd::Formats => {
+            let f = lamina_core::wiring::standard(None).formats;
+            let infos: Vec<_> = f.iter().map(|f| f.info()).collect();
+            println!("{}", serde_json::to_string_pretty(&infos)?);
+            Ok(())
+        }
+        Cmd::Routers => {
+            let r = lamina_core::wiring::standard(None).routers;
+            let infos: Vec<_> = r.iter().map(|r| r.info()).collect();
+            println!("{}", serde_json::to_string_pretty(&infos)?);
             Ok(())
         }
         Cmd::ExportStep {
@@ -261,46 +253,37 @@ fn main() -> anyhow::Result<()> {
             println!("{}", serde_json::to_string_pretty(&r)?);
             Ok(())
         }
-        Cmd::ImportGerbers { path, dir, replace } => {
-            let name = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .map(str::to_string);
-            let mut p = server::open_project(&dir.to_string_lossy(), true, name, false)?;
-            let r = p.import_gerbers(lamina_core::ImportGerbers {
-                path: path.to_string_lossy().to_string(),
-                replace,
+        Cmd::ExportBoard { dir, format, out } => {
+            let p = server::open_project(&dir.to_string_lossy(), false, None, false)?;
+            let r = p.export_board(lamina_core::ExportBoard {
+                format,
+                path: out.map(|o| o.to_string_lossy().to_string()),
             })?;
             println!("{}", serde_json::to_string_pretty(&r)?);
             Ok(())
         }
-        Cmd::ExportDsn {
+        Cmd::ExportRouting {
             dir,
+            router,
             out,
             reroute_all,
         } => {
             let p = server::open_project(&dir.to_string_lossy(), false, None, false)?;
-            let r = p.export_specctra(lamina_core::ExportSpecctra {
+            let r = p.export_for_router(lamina_core::ExportForRouter {
+                router,
                 path: out.map(|o| o.to_string_lossy().to_string()),
                 reroute_all,
             })?;
             println!("{}", serde_json::to_string_pretty(&r)?);
             Ok(())
         }
-        Cmd::ImportSes { file, dir } => {
+        Cmd::ImportRouting { dir, file, router } => {
             let mut p = server::open_project(&dir.to_string_lossy(), false, None, false)?;
-            let r = p.import_specctra_session(lamina_core::ImportSpecctraSession {
+            let r = p.import_router_session(lamina_core::ImportRouterSession {
+                router,
                 path: file.to_string_lossy().to_string(),
                 replace: true,
                 strict: false,
-            })?;
-            println!("{}", serde_json::to_string_pretty(&r)?);
-            Ok(())
-        }
-        Cmd::ExportKicad { dir, out } => {
-            let p = server::open_project(&dir.to_string_lossy(), false, None, false)?;
-            let r = p.export_kicad(lamina_core::ExportKicad {
-                path: out.map(|o| o.to_string_lossy().to_string()),
             })?;
             println!("{}", serde_json::to_string_pretty(&r)?);
             Ok(())

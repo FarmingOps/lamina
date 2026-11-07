@@ -62,8 +62,6 @@ pub struct Project {
     root: PathBuf,
     pub data: ProjectData,
     checkers: Vec<Checker>,
-    source: std::sync::Arc<dyn lamina_parts::PartSource>,
-    kicad: std::sync::Arc<dyn lamina_kicad::KicadSource>,
     /// The part library: downloads go there too, and imports look there
     /// before the network.
     library: Library,
@@ -116,8 +114,6 @@ impl Project {
             root: dir.to_path_buf(),
             data,
             checkers: Vec::new(),
-            source: std::sync::Arc::new(lamina_parts::HttpSource::default()),
-            kicad: std::sync::Arc::new(lamina_kicad::HttpSource),
             library: Library::for_board(dir),
             providers: crate::provider::Providers::new(ports.providers.clone()),
             ports,
@@ -155,8 +151,6 @@ impl Project {
             root: dir.to_path_buf(),
             data,
             checkers: Vec::new(),
-            source: std::sync::Arc::new(lamina_parts::HttpSource::default()),
-            kicad: std::sync::Arc::new(lamina_kicad::HttpSource),
             library: Library::for_board(dir),
             providers: crate::provider::Providers::new(ports.providers.clone()),
             ports,
@@ -182,25 +176,6 @@ impl Project {
 
     pub fn root(&self) -> &Path {
         &self.root
-    }
-
-    /// The source for part searches and imports (HTTP by default).
-    pub fn source(&self) -> &dyn lamina_parts::PartSource {
-        self.source.as_ref()
-    }
-
-    pub fn set_source(&mut self, s: std::sync::Arc<dyn lamina_parts::PartSource>) {
-        self.source = s;
-    }
-
-    /// The source of KiCad footprints and models (by default, the official
-    /// online libraries).
-    pub fn kicad_source(&self) -> &dyn lamina_kicad::KicadSource {
-        self.kicad.as_ref()
-    }
-
-    pub fn set_kicad_source(&mut self, s: std::sync::Arc<dyn lamina_kicad::KicadSource>) {
-        self.kicad = s;
     }
 
     /// Use different providers (tests, offline mirrors, new sources).

@@ -8,6 +8,7 @@ description = "Import and export of KiCad footprint and board files"
 
 [dependencies]
 lamina-model.workspace = true
+lamina-ports.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true

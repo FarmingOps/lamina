@@ -225,8 +225,12 @@ impl App {
 
     fn export_kicad(&mut self, root: PathBuf) {
         self.spawn_bg(move || {
-            let r = lamina_core::Project::open_shared(&root)
-                .and_then(|p| p.export_kicad(lamina_core::ExportKicad { path: None }));
+            let r = lamina_core::Project::open_shared(&root).and_then(|p| {
+                p.export_board(lamina_core::ExportBoard {
+                    format: "kicad".into(),
+                    path: None,
+                })
+            });
             match r {
                 Ok(x) => (format!("Wrote {}", x.path), true),
                 Err(e) => (format!("The KiCad export failed: {e}"), false),
