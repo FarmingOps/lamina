@@ -39,6 +39,12 @@ pub trait BoardFormat: Send + Sync {
     fn info(&self) -> FormatInfo;
     /// True if this format can read `path` (a file or a folder).
     fn detect(&self, path: &Path) -> bool;
+    /// The path that holds the whole board for `path`. A format whose board
+    /// is a set of files gives the folder of a single file. The default is
+    /// `path` itself.
+    fn source_root(&self, path: &Path) -> std::path::PathBuf {
+        path.to_path_buf()
+    }
     /// Read the board at `path`. `name` is the board name to use.
     /// `project_dir` is the folder that holds `path`, for files next to it.
     fn read(&self, path: &Path, name: &str) -> Result<ImportedBoard, String>;

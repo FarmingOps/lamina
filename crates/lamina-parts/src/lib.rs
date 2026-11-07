@@ -2,10 +2,12 @@
 
 pub mod board;
 pub mod easyeda;
+pub mod format;
 pub mod provider;
 pub mod source;
 
 pub use easyeda::{Imported, ModelInfo, PartMeta, convert, model_height, model_ref};
+pub use format::EasyedaFormat;
 pub use source::{DirSource, HttpSource, PartHit, PartSource};
 
 #[cfg(test)]

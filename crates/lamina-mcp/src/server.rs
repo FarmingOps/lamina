@@ -196,63 +196,64 @@ impl Lamina {
         self.with(|p| Ok(p.status()))
     }
 
-    /// Import a `.kicad_pcb` board into the open project: outline, parts
-    /// with footprints, nets, placement, tracks, vias, zones, keep-outs and
-    /// texts. The project must be empty, or `replace` must be true.
-    #[tool(annotations(title = "Import KiCad board"))]
-    async fn import_kicad_board(
-        &self,
-        Parameters(p): Parameters<ImportKicadBoard>,
-    ) -> Result<CallToolResult, McpError> {
-        self.with(|proj| proj.import_kicad_board(p))
+    /// The board formats that Lamina reads or writes: id, extensions and
+    /// what each one holds.
+    #[tool(annotations(title = "Formats", read_only_hint = true))]
+    async fn formats(&self) -> Result<CallToolResult, McpError> {
+        self.with(|p| Ok(p.formats()))
     }
 
-    /// Import an EasyEDA (standard editor) PCB JSON file that was saved with
-    /// File > Export > EasyEDA: outline, parts with footprints and LCSC
-    /// numbers, nets, placement, tracks, vias, copper areas, holes and
-    /// texts. The tool downloads the 3D models from EasyEDA. The project must
-    /// be empty, or `replace` must be true.
-    #[tool(annotations(title = "Import EasyEDA board"))]
-    async fn import_easyeda_board(
+    /// Import a board file of another program into the open project (see
+    /// `formats`): outline, parts with footprints, nets, placement, tracks,
+    /// vias, zones and texts, as far as the format holds them. The 3D
+    /// models come from the providers. The format is detected from the
+    /// file, or set with `format`. The project must be empty, or `replace`
+    /// must be true.
+    #[tool(annotations(title = "Import board"))]
+    async fn import_board(
         &self,
-        Parameters(p): Parameters<ImportEasyedaBoard>,
+        Parameters(p): Parameters<ImportBoard>,
     ) -> Result<CallToolResult, McpError> {
-        self.with(|proj| proj.import_easyeda_board(p))
+        self.with(|proj| proj.import_board(p))
     }
 
-    /// Write a Specctra DSN of the board for an external autorouter, for
-    /// example Freerouting (default `output/<name>.dsn`). The existing routes
-    /// are exported as protected wiring. If `reroute_all` is true, they are
-    /// not exported.
-    #[tool(annotations(title = "Export Specctra DSN"))]
-    async fn export_specctra(
+    /// Write the board as a file of another program (see `formats`). The
+    /// default path is `output/<name>.<extension>`.
+    #[tool(annotations(title = "Export board"))]
+    async fn export_board(
         &self,
-        Parameters(p): Parameters<ExportSpecctra>,
+        Parameters(p): Parameters<ExportBoard>,
     ) -> Result<CallToolResult, McpError> {
-        self.with(|proj| proj.export_specctra(p))
+        self.with(|proj| proj.export_board(p))
     }
 
-    /// Read the `.ses` session that a Specctra router wrote, and put its
+    /// The external autorouters that Lamina exchanges files with: id, the
+    /// design file it writes and the session file it reads back.
+    #[tool(annotations(title = "Routers", read_only_hint = true))]
+    async fn routers(&self) -> Result<CallToolResult, McpError> {
+        self.with(|p| Ok(p.routers()))
+    }
+
+    /// Write the design file of the board for an external autorouter (see
+    /// `routers`). The default path is `output/<name>.<extension>`. The
+    /// existing routes are exported as protected wiring. If `reroute_all`
+    /// is true, they are not exported.
+    #[tool(annotations(title = "Export for router"))]
+    async fn export_for_router(
+        &self,
+        Parameters(p): Parameters<ExportForRouter>,
+    ) -> Result<CallToolResult, McpError> {
+        self.with(|proj| proj.export_for_router(p))
+    }
+
+    /// Read the session file that an external autorouter wrote, and put its
     /// tracks and vias on the board. They replace the routes of those nets.
-    #[tool(annotations(title = "Import Specctra session"))]
-    async fn import_specctra_session(
+    #[tool(annotations(title = "Import router session"))]
+    async fn import_router_session(
         &self,
-        Parameters(p): Parameters<ImportSpecctraSession>,
+        Parameters(p): Parameters<ImportRouterSession>,
     ) -> Result<CallToolResult, McpError> {
-        self.with(|proj| proj.import_specctra_session(p))
-    }
-
-    /// Import Gerber and drill files (a folder or a zip) from any CAD
-    /// program as artwork: board outline, holes, copper and silkscreen as
-    /// drawings. Fab files have no parts or nets, so use the result only to
-    /// look at, render and check the board. The project must be empty, or
-    /// `replace` must be true.
-    #[tool(annotations(title = "Import Gerbers"))]
-    async fn import_gerbers(
-        &self,
-        Parameters(p): Parameters<ImportGerbers>,
-    ) -> Result<CallToolResult, McpError> {
-        self.with(|proj| proj.import_gerbers(p))
+        self.with(|proj| proj.import_router_session(p))
     }
 
     /// Write the assembled board as a STEP file (AP214) for mechanical CAD:
@@ -266,17 +267,6 @@ impl Lamina {
         Parameters(p): Parameters<ExportStep>,
     ) -> Result<CallToolResult, McpError> {
         self.with(|proj| proj.export_step(p))
-    }
-
-    /// Write the board as a `.kicad_pcb` file that KiCad 8 or a newer version
-    /// can open (default `output/<name>.kicad_pcb`). KiCad fills the zones
-    /// again.
-    #[tool(annotations(title = "Export KiCad board"))]
-    async fn export_kicad(
-        &self,
-        Parameters(p): Parameters<ExportKicad>,
-    ) -> Result<CallToolResult, McpError> {
-        self.with(|proj| proj.export_kicad(p))
     }
 
     /// Build `design.jsonnet` into board.json, parts.json and nets.json, then

@@ -8,6 +8,7 @@ description = "Search LCSC / JLCPCB / EasyEDA parts and import their footprints 
 
 [dependencies]
 lamina-model.workspace = true
+lamina-ports.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true

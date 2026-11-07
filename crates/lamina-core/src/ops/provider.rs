@@ -14,7 +14,7 @@ use lamina_model::*;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::lcsc::natural;
+use crate::ops::text::natural;
 use crate::project::{OpResult, Project, Touched};
 
 /// The cache folder of a project. `cache/parts` and `cache/models` are in it.
@@ -416,11 +416,10 @@ impl Project {
         // provider did not know it.
         if let Some(m) = rec.model().cloned() {
             let path = self.root().join(MODEL_DIR).join(&m.file);
-            match self.load_mesh(&path) {
-                Ok(mesh) => {
+            match self.mesh_height(&path) {
+                Ok(h) => {
                     if rec.footprint.height.is_none() {
-                        rec.footprint.height =
-                            mesh.bounds().map(|(_, hi)| json::round6(hi[2] as f64));
+                        rec.footprint.height = h;
                     }
                     rec.notes.push(format!("3D model {}", m.file));
                 }
@@ -572,9 +571,10 @@ impl Project {
         library_info(self.library())
     }
 
-    /// A model from a provider, written into `cache/models/<provider>/`.
-    /// Gives the path relative to `cache/models/`.
-    pub(crate) fn provider_model_into_cache(&self, name: &str) -> Result<String> {
+    /// A model from a provider, written into `cache/models/<provider>/` and
+    /// into the library. Gives the model reference and the top of the model
+    /// above the board.
+    pub(crate) fn provider_model(&self, name: &str) -> Result<(ModelRef, Option<f64>)> {
         let (pid, id) = split_name(name).ok_or_else(|| {
             Error::invalid(format!(
                 "`{name}` is not `provider:id`. The providers are: {}.",
@@ -588,9 +588,38 @@ impl Project {
             ))
         })?;
         let rel = format!("{pid}/{}", m.name);
-        write_atomic(&self.root().join(MODEL_DIR).join(&rel), &m.bytes)?;
+        let path = self.root().join(MODEL_DIR).join(&rel);
+        write_atomic(&path, &m.bytes)?;
         let _ = self.library().put(&format!("models/{rel}"), &m.bytes);
-        Ok(rel)
+        let height = match m.height {
+            Some(h) => Some(h),
+            None => self.mesh_height(&path).map_err(Error::Invalid)?,
+        };
+        Ok((
+            ModelRef {
+                file: rel,
+                offset: m.offset,
+                rotation: m.rotation,
+                scale: m.scale,
+            },
+            height,
+        ))
+    }
+
+    /// A model from a provider, written into `cache/models/<provider>/`.
+    /// Gives the path relative to `cache/models/`.
+    pub(crate) fn provider_model_into_cache(&self, name: &str) -> Result<String> {
+        Ok(self.provider_model(name)?.0.file)
+    }
+}
+
+impl Project {
+    /// The top of a model file above the board, through the mesh loader port.
+    fn mesh_height(&self, path: &Path) -> std::result::Result<Option<f64>, String> {
+        let mesh = self
+            .load_mesh(path)
+            .map_err(|e| format!("The 3D model did not load: {e}"))?;
+        Ok(mesh.bounds().map(|(_, hi)| json::round6(hi[2] as f64)))
     }
 }
 

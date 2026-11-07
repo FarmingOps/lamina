@@ -2675,6 +2675,7 @@ name = "lamina-kicad"
 version = "0.1.0"
 dependencies = [
  "lamina-model",
+ "lamina-ports",
  "schemars",
  "serde",
  "serde_json",
@@ -2716,6 +2717,7 @@ name = "lamina-parts"
 version = "0.1.0"
 dependencies = [
  "lamina-model",
+ "lamina-ports",
  "schemars",
  "serde",
  "serde_json",

@@ -409,6 +409,37 @@ pub fn export_dsn(d: &ProjectData, name: &str, reroute_all: bool) -> String {
 
 pub use lamina_ports::router::Session;
 
+use lamina_ports::router::{RouterExchange, RouterInfo};
+
+pub const ID: &str = "specctra";
+
+/// The Specctra DSN and SES files as a [`RouterExchange`].
+#[derive(Debug, Default)]
+pub struct SpecctraExchange;
+
+impl RouterExchange for SpecctraExchange {
+    fn info(&self) -> RouterInfo {
+        RouterInfo {
+            id: ID.into(),
+            name: "Specctra".into(),
+            description: "A Specctra DSN design file for an external autorouter, for \
+                          example Freerouting (java -jar freerouting.jar -de <file.dsn> \
+                          -do <file.ses>), and the SES session file it writes back."
+                .into(),
+            design_extension: "dsn".into(),
+            session_extension: "ses".into(),
+        }
+    }
+
+    fn export(&self, data: &ProjectData, name: &str, reroute_all: bool) -> Result<String, String> {
+        Ok(export_dsn(data, name, reroute_all))
+    }
+
+    fn import_session(&self, text: &str, data: &ProjectData) -> Result<Session, String> {
+        import_ses(text, data)
+    }
+}
+
 /// Read a Specctra session (`.ses`) that Freerouting wrote.
 pub fn import_ses(src: &str, d: &ProjectData) -> Result<Session, String> {
     let root = sexpr::parse(src)?;

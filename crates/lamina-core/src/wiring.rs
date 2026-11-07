@@ -34,6 +34,11 @@ pub fn standard(board: Option<&Path>) -> Ports {
         meshes: Some(Arc::new(lamina_step::FileMeshLoader)),
         renderer: Some(Arc::new(lamina_render::PngRenderer)),
         source: Some(Arc::new(lamina_build::JsonnetSource)),
-        ..Ports::default()
+        formats: vec![
+            Arc::new(lamina_kicad::KicadFormat),
+            Arc::new(lamina_parts::EasyedaFormat),
+            Arc::new(lamina_export::GerberFormat),
+        ],
+        routers: vec![Arc::new(lamina_specctra::SpecctraExchange)],
     }
 }

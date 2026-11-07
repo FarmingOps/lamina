@@ -384,18 +384,30 @@ fn kicad_footprint_import_and_board_round_trip() {
         strict: false,
     })
     .unwrap();
-    let out = p.export_kicad(ExportKicad { path: None }).unwrap();
+    let out = p
+        .export_board(ExportBoard {
+            format: "kicad".into(),
+            path: None,
+        })
+        .unwrap();
     assert!(out.path.ends_with("demo.kicad_pcb"), "{}", out.path);
     assert_eq!(out.parts, 2);
+    let e = p
+        .export_board(ExportBoard {
+            format: "nope".into(),
+            path: None,
+        })
+        .unwrap_err();
+    assert!(e.to_string().contains("kicad"), "{e}");
 
-    // Import into a new project.
+    // Import into a new project. The format comes from the file name.
     let dir2 = t.path().join("imported");
     let mut q = Project::create(&dir2, "x").unwrap();
     let r = q
-        .import_kicad_board(ImportKicadBoard {
+        .import_board(ImportBoard {
             path: out.path.clone(),
+            format: None,
             models: false,
-            online: false,
             replace: false,
             strict: false,
         })
@@ -407,16 +419,126 @@ fn kicad_footprint_import_and_board_round_trip() {
     assert_eq!(q.data.nets.nets["GND"].pads.len(), 2);
     assert!(q.data.board.outline.is_some());
     assert!(
-        q.import_kicad_board(ImportKicadBoard {
+        q.import_board(ImportBoard {
             path: out.path,
+            format: None,
             models: false,
-            online: false,
             replace: false,
             strict: false
         })
         .is_err(),
         "a second import needs replace"
     );
+    let ids: Vec<String> = q.formats().into_iter().map(|f| f.id).collect();
+    assert!(ids.contains(&"kicad".to_string()), "{ids:?}");
+}
+
+#[test]
+fn router_exchange_writes_a_design_and_reads_the_session_back() {
+    let (_t, mut p) = new_project();
+    add_resistor(&mut p, "R1");
+    add_resistor(&mut p, "R2");
+    // Without an outline, the export is refused.
+    let e = p
+        .export_for_router(ExportForRouter {
+            router: "specctra".into(),
+            path: None,
+            reroute_all: false,
+        })
+        .unwrap_err();
+    assert!(e.to_string().contains("outline"), "{e}");
+    p.set_outline(SetOutline {
+        rect: Some(RectSpec {
+            x: 0.0,
+            y: 0.0,
+            width: 20.0,
+            height: 15.0,
+            corner_radius: 0.0,
+        }),
+        contour: None,
+        cutouts: None,
+        strict: false,
+    })
+    .unwrap();
+    p.set_nets(SetNets {
+        nets: [(
+            "SIG".to_string(),
+            Net {
+                pads: vec!["R1.2".parse().unwrap(), "R2.1".parse().unwrap()],
+                class: None,
+            },
+        )]
+        .into(),
+        replace: true,
+        strict: false,
+    })
+    .unwrap();
+    for (r, x) in [("R1", 4.0), ("R2", 10.0)] {
+        p.place(Place {
+            refdes: r.into(),
+            x,
+            y: 5.0,
+            rotation: None,
+            side: None,
+            locked: None,
+            strict: false,
+        })
+        .unwrap();
+    }
+    let ids: Vec<String> = p.routers().into_iter().map(|r| r.id).collect();
+    assert_eq!(ids, vec!["specctra"]);
+    let out = p
+        .export_for_router(ExportForRouter {
+            router: "specctra".into(),
+            path: None,
+            reroute_all: false,
+        })
+        .unwrap();
+    assert!(out.path.ends_with("demo.dsn"), "{}", out.path);
+    assert_eq!(out.nets, 1);
+    let text = std::fs::read_to_string(&out.path).unwrap();
+    assert!(text.starts_with("(pcb"), "{text}");
+    assert!(out.hint.contains("import_router_session"));
+    let e = p
+        .export_for_router(ExportForRouter {
+            router: "nope".into(),
+            path: None,
+            reroute_all: false,
+        })
+        .unwrap_err();
+    assert!(e.to_string().contains("specctra"), "{e}");
+
+    // A session as a router writes it: one wire and one via on SIG.
+    let ses = r#"(session "demo.ses"
+  (base_design "demo.dsn")
+  (routes
+    (resolution um 10)
+    (library_out
+      (padstack "Via[0-1]_600:300_um" (shape (circle F.Cu 6000 0 0)) (shape (circle B.Cu 6000 0 0)) (attach off)))
+    (network_out
+      (net "SIG"
+        (wire (path F.Cu 2500 48000 50000 70000 50000))
+        (via "Via[0-1]_600:300_um" 70000 50000)
+        (wire (path B.Cu 2500 70000 50000 92000 50000))))))"#;
+    let ses_path = p.root().join("output/demo.ses");
+    std::fs::write(&ses_path, ses).unwrap();
+    let r = p
+        .import_router_session(ImportRouterSession {
+            router: "specctra".into(),
+            path: ses_path.to_string_lossy().into_owned(),
+            replace: true,
+            strict: false,
+        })
+        .unwrap();
+    assert!(
+        r.summary.contains("2 track(s) and 1 via(s)"),
+        "{}",
+        r.summary
+    );
+    assert_eq!(p.data.routing.tracks.len(), 2);
+    assert_eq!(p.data.routing.vias.len(), 1);
+    assert!(p.data.routing.tracks.iter().all(|t| t.net == "SIG"));
+    assert_eq!(p.data.routing.vias[0].at, Point::new(7.0, 5.0));
 }
 
 /// Two resistors in series as one block: IN - R.1, R.2 - S.1 (MID), S.2 - OUT.
@@ -602,12 +724,17 @@ fn kicad_board_models_fall_back_and_resolve_project_paths() {
 "#;
     let file = kicad.join("b.kicad_pcb");
     std::fs::write(&file, pcb).unwrap();
-    let mut p = Project::create(&t.path().join("board"), "x").unwrap();
+    // The providers are offline: the library model cannot be found, so the
+    // model in the project is used.
+    let empty = t.path().join("empty");
+    std::fs::create_dir_all(&empty).unwrap();
+    let mut p = Project::create_with(&t.path().join("board"), "x", offline_ports(&empty)).unwrap();
+    p.set_library(Library::at(&t.path().join("lib")));
     let r = p
-        .import_kicad_board(ImportKicadBoard {
+        .import_board(ImportBoard {
             path: file.to_string_lossy().into_owned(),
+            format: Some("kicad".into()),
             models: true,
-            online: false,
             replace: false,
             strict: false,
         })
@@ -621,6 +748,12 @@ fn kicad_board_models_fall_back_and_resolve_project_paths() {
     let m = fp.model.as_ref().expect("project model used");
     assert_eq!(m.file, "kicad/models/body.step");
     assert_eq!(m.offset, [0.0, 0.0, 1.0]);
+    assert!(fp.height.is_some_and(|h| h > 0.0), "{:?}", fp.height);
+    assert!(
+        p.root()
+            .join("cache/models/kicad/models/body.step")
+            .is_file()
+    );
     // A relative path that has no variable is also read from the KiCad project.
     let fp2 = &p.data.footprints[&p.data.parts.parts["J2"].footprint];
     assert!(fp2.model.is_some());
@@ -689,9 +822,30 @@ fn fixtures_kicad() -> std::path::PathBuf {
         .join("../lamina-kicad/tests/fixtures/footprints")
 }
 
+/// The standard formats and routers, with the given providers.
+fn ports_with(providers: Vec<std::sync::Arc<dyn lamina_core::ports::Provider>>) -> Ports {
+    use std::sync::Arc;
+    Ports {
+        providers,
+        formats: vec![
+            Arc::new(lamina_kicad::KicadFormat),
+            Arc::new(lamina_parts::EasyedaFormat),
+            Arc::new(lamina_export::GerberFormat),
+        ],
+        routers: vec![Arc::new(lamina_specctra::SpecctraExchange)],
+        meshes: Some(Arc::new(lamina_step::FileMeshLoader)),
+        ..Ports::default()
+    }
+}
+
 /// The vendor provider on the recorded fixtures (`dir`), and the footprint
 /// provider on the fixture libraries with `models` as its model root.
 fn test_providers(dir: &std::path::Path, models: &std::path::Path) -> Providers {
+    Providers::new(test_ports(dir, models).providers)
+}
+
+/// Like [`test_providers`], as a full set of ports.
+fn test_ports(dir: &std::path::Path, models: &std::path::Path) -> Ports {
     use std::sync::Arc;
     let parts = lamina_parts::provider::LcscProvider::new(Arc::new(lamina_parts::DirSource {
         dir: dir.to_path_buf(),
@@ -704,11 +858,16 @@ fn test_providers(dir: &std::path::Path, models: &std::path::Path) -> Providers 
         vec![fixtures_kicad()],
         vec![models.to_path_buf()],
     );
-    Providers::new(vec![Arc::new(parts), Arc::new(kicad)])
+    ports_with(vec![Arc::new(parts), Arc::new(kicad)])
 }
 
 /// Providers that cannot reach anything: an empty folder as every source.
 fn offline_providers(empty: &std::path::Path) -> Providers {
+    Providers::new(offline_ports(empty).providers)
+}
+
+/// Like [`offline_providers`], as a full set of ports.
+fn offline_ports(empty: &std::path::Path) -> Ports {
     use std::sync::Arc;
     let parts = lamina_parts::provider::LcscProvider::new(Arc::new(lamina_parts::DirSource {
         dir: empty.to_path_buf(),
@@ -721,7 +880,7 @@ fn offline_providers(empty: &std::path::Path) -> Providers {
         vec![],
         vec![],
     );
-    Providers::new(vec![Arc::new(parts), Arc::new(kicad)])
+    ports_with(vec![Arc::new(parts), Arc::new(kicad)])
 }
 
 fn import(p: &mut Project, part: &str, refdes: Option<&str>) -> Result<OpResult> {

@@ -279,18 +279,26 @@ Lamina reads and writes KiCad files. You do not need KiCad.
   through `kicad_footprints` and `kicad_models` in `lamina.json`, `KICAD*_FOOTPRINT_DIR`
   and `KICAD*_3DMODEL_DIR`, or a KiCad install. If there is no local library, it downloads
   the footprint and its STEP model from the official KiCad libraries.
-- `import_kicad_board` and `lamina import-kicad <file> <dir>` import a `.kicad_pcb` from
-  KiCad 6 to 10. Lamina imports the outline, footprints, parts, nets, placement, tracks,
-  vias, zones, keep-outs and texts. The design rules and net classes come from the
-  `.kicad_pro` file next to the board. Lamina finds `${KIPRJMOD}` models next to the board.
-  `--online` downloads the other models from the official libraries.
-- `export_kicad` and `lamina export-kicad <dir>` write a `.kicad_pcb` for KiCad 8 or
-  later. KiCad fills the zones again when it opens the file.
+- `import_board` and `lamina import <file> <dir>` import a `.kicad_pcb` from KiCad 6
+  to 10 (format `kicad`). Lamina imports the outline, footprints, parts, nets, placement,
+  tracks, vias, zones, keep-outs and texts. The design rules and net classes come from
+  the `.kicad_pro` file next to the board. Lamina finds `${KIPRJMOD}` models next to the
+  board. The `kicad` provider gives the other models, from the local libraries or from
+  the official online libraries. `--no-models` skips them.
+- `export_board` with `format: kicad` and `lamina export-board <dir> --format kicad`
+  write a `.kicad_pcb` for KiCad 8 or later. KiCad fills the zones again when it opens
+  the file.
+
+## Board formats
+
+Lamina reads a board file through a board format. `formats` and `lamina formats` list
+them: `kicad`, `easyeda` and `gerber`. `import_board` and `lamina import <file> <dir>`
+detect the format from the file, or take it with `format`.
 
 ## EasyEDA boards
 
-`import_easyeda_board` and `lamina import-easyeda <file.json> <dir>` import a board from the
-standard EasyEDA editor. In EasyEDA, use File → Export → EasyEDA to save the file.
+`import_board` and `lamina import <file.json> <dir>` import a board from the standard
+EasyEDA editor (format `easyeda`). In EasyEDA, use File → Export → EasyEDA to save the file.
 
 Lamina imports the outline, the parts with their LCSC numbers, nets, placement, tracks,
 vias, copper areas, holes and texts. Lamina downloads the 3D models from EasyEDA. Solid
@@ -299,8 +307,8 @@ less strict to agree with the board. After the import, apply a fab preset.
 
 ## Gerber files
 
-`import_gerbers` and `lamina import-gerbers <folder or zip> <dir>` import Gerber and
-Excellon files from any CAD program. Lamina finds the layer of each file from its X2
+`import_board` and `lamina import <folder or zip> <dir>` import Gerber and Excellon
+files from any CAD program (format `gerber`). Lamina finds the layer of each file from its X2
 attributes or from its name (KiCad, Altium, EasyEDA and Eagle names).
 
 Gerber files have no parts and no nets, so the board has only the outline, the holes,
@@ -323,15 +331,17 @@ to design an enclosure.
 Lamina does not need a different router. To compare with a different router, export the
 board as a Specctra DSN file and import the result:
 
-- `export_specctra` and `lamina export-dsn <dir>` write the DSN file.
-- `import_specctra_session` and `lamina import-ses <file.ses> <dir>` read the session file.
+- `routers` and `lamina routers` list the routers Lamina exchanges files with (`specctra`).
+- `export_for_router` and `lamina export-routing <dir> --router specctra` write the DSN file.
+- `import_router_session` and `lamina import-routing <dir> <file.ses> --router specctra`
+  read the session file.
 
 With [Freerouting](https://github.com/freerouting/freerouting):
 
 ```
-lamina export-dsn boards/servo
+lamina export-routing boards/servo --router specctra
 java -jar freerouting.jar -de boards/servo/output/esp32-servo.dsn -do boards/servo/output/esp32-servo.ses
-lamina import-ses boards/servo/output/esp32-servo.ses boards/servo
+lamina import-routing boards/servo boards/servo/output/esp32-servo.ses --router specctra
 ```
 
 The DSN file has the existing tracks as fixed tracks. If you set `reroute_all`, Lamina does
