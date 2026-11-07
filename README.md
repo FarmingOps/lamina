@@ -2,7 +2,7 @@
 
 # Lamina
 
-Lamina is a PCB layout program for coding agents, for example Claude Code and Codex.
+Lamina is a PCB layout program that an AI coding agent operates through MCP tools, while you watch the board in a live viewer and edit it yourself when you want.
 
 - `lamina` is an MCP server. An agent uses its tools to add parts and nets, place the
   parts, route the tracks, do a DRC and export the fab files.
