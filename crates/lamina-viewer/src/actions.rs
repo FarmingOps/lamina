@@ -184,8 +184,13 @@ impl App {
 
     fn export_fab(&mut self, root: PathBuf, force: bool) {
         self.spawn_bg(move || {
-            let r = lamina_core::Project::open_shared(&root)
-                .and_then(|p| p.export(lamina_core::Export { dir: None, force }));
+            let r = lamina_core::Project::open_shared(&root).and_then(|p| {
+                p.export(lamina_core::Export {
+                    dir: None,
+                    force,
+                    fabricator: None,
+                })
+            });
             match r {
                 Ok(x) => (
                     format!(

@@ -354,7 +354,8 @@ impl Project {
             p.file.replace('\\', "/")
         };
         let path = self.root().join(MODEL_DIR).join(&rel);
-        let mesh = lamina_step::load(&path)
+        let mesh = self
+            .load_mesh(&path)
             .map_err(|e| Error::invalid(format!("Lamina cannot load the model: {e}")))?;
         let (lo, hi) = mesh.bounds().unwrap_or(([0.0; 3], [0.0; 3]));
         let mut d = self.data.clone();

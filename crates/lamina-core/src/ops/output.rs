@@ -1,5 +1,7 @@
 use lamina_model::error::Result;
 use lamina_model::*;
+use lamina_ports::Ports;
+use lamina_ports::fab::FabInfo;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +15,9 @@ pub struct Export {
     /// Export also if DRC finds errors (default false).
     #[serde(default)]
     pub force: bool,
+    /// The fabricator id (see `fabricators`). The default is the first one.
+    #[serde(default)]
+    pub fabricator: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -43,6 +48,11 @@ pub struct ResolveNotes {
 }
 
 impl Project {
+    /// The fabrication outputs that are plugged in, in the default order.
+    pub fn fabricators(&self) -> Vec<FabInfo> {
+        self.ports.fabricators.iter().map(|f| f.info()).collect()
+    }
+
     pub fn export(&self, p: Export) -> Result<Exported> {
         let errors: Vec<Violation> = self
             .check()
@@ -52,12 +62,24 @@ impl Project {
         if !errors.is_empty() && !p.force {
             let list: Vec<String> = errors.iter().take(8).map(|v| v.message.clone()).collect();
             return Err(Error::Refused(format!(
-                "There are {} DRC error(s). To export, fix them or pass force: true. \
-                 The first errors are: {}",
+                "There are {} DRC error(s). To export, fix them or pass force: true.                  The first errors are: {}",
                 errors.len(),
                 list.join("; ")
             )));
         }
+        let fab = match &p.fabricator {
+            Some(id) => self.ports.fabricator(id).ok_or_else(|| {
+                Error::invalid(format!(
+                    "There is no fabricator `{id}`. Call `fabricators` for the list."
+                ))
+            })?,
+            None => self
+                .ports
+                .fabricators
+                .first()
+                .map(|f| f.as_ref())
+                .ok_or_else(|| Error::invalid(Ports::missing("fabricator")))?,
+        };
         let (a, s2, _) = lamina_scene::build(&self.data, self.root());
         let name: String = self
             .data
@@ -72,9 +94,9 @@ impl Project {
                 }
             })
             .collect();
-        let mut fab = lamina_export::gerbers(&s2, &name);
-        fab.extend(lamina_export::drills(&a.geometry, &name));
-        let (asm, mut warnings) = lamina_export::assembly(&self.data, &name);
+        let artwork = fab.artwork(&s2, &a.geometry, &name);
+        let (asm, mut warnings) = fab.assembly(&self.data, &name);
+        let archive = fab.archive(&artwork, &name).map_err(Error::Invalid)?;
         let rel = p.dir.unwrap_or_else(|| "output".into());
         if rel.contains("..") {
             return Err(Error::invalid(
@@ -82,7 +104,13 @@ impl Project {
             ));
         }
         let dir = self.root().join(rel);
-        let files = lamina_export::write(&dir, &name, &fab, &asm).map_err(Error::Invalid)?;
+        std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
+        let mut files = Vec::new();
+        for o in artwork.iter().chain(&asm).chain(&archive) {
+            let path = dir.join(&o.name);
+            std::fs::write(&path, &o.contents).map_err(|e| Error::io(&path, e))?;
+            files.push(path.display().to_string());
+        }
         if !errors.is_empty() {
             warnings.insert(
                 0,
@@ -96,10 +124,7 @@ impl Project {
         if unrouted > 0 {
             warnings.push(format!("{unrouted} connection(s) are not routed yet."));
         }
-        Ok(Exported {
-            files: files.iter().map(|f| f.display().to_string()).collect(),
-            warnings,
-        })
+        Ok(Exported { files, warnings })
     }
 
     fn notes_from_disk(&self) -> NotesFile {
@@ -267,16 +292,22 @@ impl Project {
             Some(s) => std::path::PathBuf::from(s),
             None => self.root().join("output").join(format!("{name}.step")),
         };
-        let x = lamina_export::step_out::export_step(
-            &self.data,
-            self.root(),
-            &name,
-            &lamina_export::step_out::StepOptions {
-                vias: p.vias,
-                parts: !p.board_only,
-            },
-        )
-        .map_err(Error::Invalid)?;
+        let writer = self
+            .ports
+            .step
+            .as_ref()
+            .ok_or_else(|| Error::invalid(Ports::missing("STEP writer")))?;
+        let x = writer
+            .export(
+                &self.data,
+                self.root(),
+                &name,
+                &lamina_ports::mesh::StepOptions {
+                    vias: p.vias,
+                    parts: !p.board_only,
+                },
+            )
+            .map_err(Error::Invalid)?;
         write_atomic(&path, &x.bytes)?;
         Ok(StepExported {
             path: path.display().to_string(),

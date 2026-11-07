@@ -416,7 +416,7 @@ impl Project {
         // provider did not know it.
         if let Some(m) = rec.model().cloned() {
             let path = self.root().join(MODEL_DIR).join(&m.file);
-            match lamina_step::load(&path) {
+            match self.load_mesh(&path) {
                 Ok(mesh) => {
                     if rec.footprint.height.is_none() {
                         rec.footprint.height =

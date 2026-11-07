@@ -36,6 +36,16 @@ pub fn load(path: &Path) -> Result<Mesh, String> {
     }
 }
 
+/// The mesh loader port of this crate: [`load`] behind the trait.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FileMeshLoader;
+
+impl mesh::MeshLoader for FileMeshLoader {
+    fn load(&self, path: &Path) -> Result<Mesh, String> {
+        load(path)
+    }
+}
+
 fn fnv(b: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
     for x in b {

@@ -29,6 +29,9 @@ pub fn standard(board: Option<&Path>) -> Ports {
                 fp_dirs, m_dirs,
             )),
         ],
+        fabricators: vec![Arc::new(lamina_export::GerberFabricator)],
+        step: Some(Arc::new(lamina_export::StepExporter)),
+        meshes: Some(Arc::new(lamina_step::FileMeshLoader)),
         ..Ports::default()
     }
 }

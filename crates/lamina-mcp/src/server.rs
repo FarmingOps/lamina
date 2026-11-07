@@ -745,9 +745,26 @@ impl Lamina {
             Err(e) => Ok(error_result(e)),
         }
     }
-    /// Write Gerber X2, Excellon (PTH and NPTH), JLCPCB BOM and CPL files and
-    /// a Gerber zip into the output folder of the project. If DRC has errors
-    /// and `force` is not true, the tool refuses.
+    /// The fabrication outputs that are plugged in, with the id of each.
+    /// `export` uses the first one by default.
+    #[tool(annotations(title = "Fabricators", read_only_hint = true))]
+    async fn fabricators(&self) -> Result<CallToolResult, McpError> {
+        let guard = self.project.lock().unwrap_or_else(|p| p.into_inner());
+        let infos: Vec<lamina_core::ports::fab::FabInfo> = match guard.as_ref() {
+            Some(proj) => proj.fabricators(),
+            None => lamina_core::wiring::standard(None)
+                .fabricators
+                .iter()
+                .map(|f| f.info())
+                .collect(),
+        };
+        Ok(json_result(&infos))
+    }
+
+    /// Write the fabrication files into the output folder of the project:
+    /// the artwork (by default Gerber X2 and Excellon, PTH and NPTH), the
+    /// assembly files (BOM and CPL) and a zip of the artwork. If DRC has
+    /// errors and `force` is not true, the tool refuses.
     #[tool(annotations(title = "Export for fabrication"))]
     async fn export(&self, Parameters(p): Parameters<Export>) -> Result<CallToolResult, McpError> {
         self.with(|proj| proj.export(p))

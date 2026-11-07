@@ -130,7 +130,7 @@ impl Project {
                 }
             }
         }
-        match lamina_step::load(&dst) {
+        match self.load_mesh(&dst) {
             Ok(mesh) => {
                 let height = mesh.bounds().map(|(_, hi)| json::round6(hi[2] as f64));
                 notes.push(format!("3D model {rel}"));

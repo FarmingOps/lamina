@@ -115,7 +115,7 @@ impl Project {
             // The STEP file has the same geometry in the same frame, but with
             // smooth surfaces. Use it if it loads.
             if step_path.exists() {
-                match lamina_step::load(&step_path) {
+                match self.load_mesh(&step_path) {
                     Ok(_) => model.file = rel_step,
                     Err(e) => notes.push(format!(
                         "The STEP file did not load, so Lamina uses the OBJ file: {e}"

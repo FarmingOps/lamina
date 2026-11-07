@@ -219,6 +219,16 @@ impl Project {
         self.ports = ports;
     }
 
+    /// Read a 3D model file through the mesh loader port.
+    pub(crate) fn load_mesh(&self, path: &Path) -> Result<lamina_ports::mesh::Mesh> {
+        let loader = self
+            .ports
+            .meshes
+            .as_ref()
+            .ok_or_else(|| Error::invalid(Ports::missing("mesh loader")))?;
+        loader.load(path).map_err(Error::Invalid)
+    }
+
     /// The part library of this board.
     pub fn library(&self) -> &Library {
         &self.library

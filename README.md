@@ -41,10 +41,10 @@ An agent made this board with the Lamina tools. It is an ESP32-S3 servo controll
 | `lamina-geom` | Polygon operations, spatial index |
 | `lamina-footprint` | IPC-7351 footprints, footprints from a datasheet |
 | `lamina-parts` | Part search and import from LCSC, JLCPCB and EasyEDA |
-| `lamina-step` | STEP reader and tessellator, OBJ reader, mesh cache |
+| `lamina-step` | The mesh loader adapter: STEP reader and tessellator, OBJ reader, mesh cache |
 | `lamina-drc` | Design rules, fab presets, DRC, connectivity |
 | `lamina-route` | Track routing, pour fill, autorouter |
-| `lamina-export` | Gerber X2, Excellon, BOM, CPL, board STEP |
+| `lamina-export` | The fabrication and STEP writer adapters: Gerber X2, Excellon, BOM, CPL, board STEP |
 | `lamina-scene` | Shapes to draw, for the 2D and 3D renderers |
 | `lamina-render` | PNG images in 2D and 3D |
 | `lamina-build` | Jsonnet board sources, workspaces |

@@ -1,6 +1,7 @@
 //! Fabrication outputs: Gerber X2, Excellon, JLCPCB BOM and CPL, zip.
 
 pub mod fab_import;
+pub mod fabricator;
 pub mod gerber;
 pub mod gerber_in;
 pub mod reader;
@@ -15,6 +16,7 @@ use lamina_geom::prim::Prim;
 use lamina_model::*;
 use lamina_scene::{Scene2D, SceneLayer};
 
+pub use fabricator::{GerberFabricator, StepExporter};
 pub use lamina_ports::fab::Output;
 
 fn copper_ext(i: u8, n: u8) -> (String, String) {
@@ -225,6 +227,23 @@ fn natural(a: &str, b: &str) -> std::cmp::Ordering {
     split(a).cmp(&split(b)).then(a.cmp(b))
 }
 
+/// A zip of the fabrication files, named `<name>-gerbers.zip`.
+pub fn archive(fab: &[Output], name: &str) -> Result<Output, String> {
+    let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let opt = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    for o in fab {
+        z.start_file(o.name.as_str(), opt)
+            .map_err(|e| e.to_string())?;
+        z.write_all(&o.contents).map_err(|e| e.to_string())?;
+    }
+    let c = z.finish().map_err(|e| e.to_string())?;
+    Ok(Output {
+        name: format!("{name}-gerbers.zip"),
+        contents: c.into_inner(),
+    })
+}
+
 /// Write the files to `dir`, and a zip of the fabrication files.
 pub fn write(
     dir: &Path,
@@ -234,22 +253,11 @@ pub fn write(
 ) -> Result<Vec<PathBuf>, String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let mut paths = Vec::new();
-    for o in fab.iter().chain(asm) {
+    let zip = archive(fab, name)?;
+    for o in fab.iter().chain(asm).chain(std::iter::once(&zip)) {
         let p = dir.join(&o.name);
         std::fs::write(&p, &o.contents).map_err(|e| format!("{}: {e}", p.display()))?;
         paths.push(p);
     }
-    let zp = dir.join(format!("{name}-gerbers.zip"));
-    let f = std::fs::File::create(&zp).map_err(|e| format!("{}: {e}", zp.display()))?;
-    let mut z = zip::ZipWriter::new(f);
-    let opt = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
-    for o in fab {
-        z.start_file(o.name.as_str(), opt)
-            .map_err(|e| e.to_string())?;
-        z.write_all(&o.contents).map_err(|e| e.to_string())?;
-    }
-    z.finish().map_err(|e| e.to_string())?;
-    paths.push(zp);
     Ok(paths)
 }

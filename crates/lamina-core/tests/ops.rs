@@ -888,3 +888,87 @@ fn fetch_fills_the_library_without_a_project() {
     let ids: Vec<String> = providers.infos().into_iter().map(|i| i.id).collect();
     assert_eq!(ids, vec!["lcsc", "kicad"]);
 }
+
+/// A fabricator that gives one artwork file and one assembly file.
+struct FakeFab;
+
+impl lamina_core::ports::fab::Fabricator for FakeFab {
+    fn info(&self) -> lamina_core::ports::fab::FabInfo {
+        lamina_core::ports::fab::FabInfo {
+            id: "fake".into(),
+            name: "Fake".into(),
+            description: "test".into(),
+        }
+    }
+
+    fn artwork(
+        &self,
+        _scene: &lamina_scene::Scene2D,
+        _geometry: &lamina_geom::BoardGeometry,
+        name: &str,
+    ) -> Vec<lamina_core::ports::fab::Output> {
+        vec![lamina_core::ports::fab::Output {
+            name: format!("{name}.art"),
+            contents: b"art".to_vec(),
+        }]
+    }
+
+    fn assembly(
+        &self,
+        _data: &ProjectData,
+        name: &str,
+    ) -> (Vec<lamina_core::ports::fab::Output>, Vec<String>) {
+        (
+            vec![lamina_core::ports::fab::Output {
+                name: format!("{name}-asm.csv"),
+                contents: b"asm".to_vec(),
+            }],
+            vec!["fake warning".into()],
+        )
+    }
+}
+
+#[test]
+fn export_through_a_fabricator_port() {
+    let (_t, mut p) = new_project();
+    p.set_outline(SetOutline {
+        rect: Some(RectSpec {
+            x: 0.0,
+            y: 0.0,
+            width: 10.0,
+            height: 10.0,
+            corner_radius: 0.0,
+        }),
+        contour: None,
+        cutouts: None,
+        strict: false,
+    })
+    .unwrap();
+    p.set_ports(Ports {
+        fabricators: vec![std::sync::Arc::new(FakeFab)],
+        ..Ports::default()
+    });
+    assert_eq!(p.fabricators()[0].id, "fake");
+
+    let r = p
+        .export(Export {
+            dir: None,
+            force: true,
+            fabricator: Some("fake".into()),
+        })
+        .unwrap();
+    assert_eq!(r.files.len(), 2);
+    assert!(r.warnings.contains(&"fake warning".to_string()));
+    let out = p.root().join("output");
+    assert_eq!(std::fs::read(out.join("demo.art")).unwrap(), b"art");
+    assert_eq!(std::fs::read(out.join("demo-asm.csv")).unwrap(), b"asm");
+
+    let e = p
+        .export(Export {
+            dir: None,
+            force: true,
+            fabricator: Some("none".into()),
+        })
+        .unwrap_err();
+    assert!(e.to_string().contains("no fabricator"));
+}

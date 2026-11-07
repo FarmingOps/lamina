@@ -28,4 +28,10 @@ pub trait Fabricator: Send + Sync {
     fn artwork(&self, scene: &Scene2D, geometry: &BoardGeometry, name: &str) -> Vec<Output>;
     /// The assembly files: BOM and placement. The strings are warnings.
     fn assembly(&self, data: &ProjectData, name: &str) -> (Vec<Output>, Vec<String>);
+    /// One archive of the artwork files, for the board house. A fabricator
+    /// that has no archive gives `None`, which is the default.
+    fn archive(&self, artwork: &[Output], name: &str) -> Result<Option<Output>, String> {
+        let _ = (artwork, name);
+        Ok(None)
+    }
 }
