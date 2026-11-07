@@ -3,7 +3,9 @@ use lamina_core::*;
 
 fn new_project() -> (tempfile::TempDir, Project) {
     let dir = tempfile::tempdir().unwrap();
-    let p = Project::create(&dir.path().join("b"), "demo").unwrap();
+    let mut p = Project::create(&dir.path().join("b"), "demo").unwrap();
+    // Never write test downloads into the library of the user.
+    p.set_library(Library::at(&dir.path().join("lib")));
     (dir, p)
 }
 
@@ -694,5 +696,201 @@ fn frame_3d_fits_a_part_a_pad_or_a_region() {
     assert!(
         p.frame_3d(None, Some(&Target::Name("R1.7".into())))
             .is_err()
+    );
+}
+
+fn fixtures_parts() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../lamina-parts/tests/fixtures")
+}
+
+fn import_c6186(p: &mut Project, refdes: &str) -> Result<OpResult> {
+    p.import_lcsc(ImportLcsc {
+        lcsc: "C6186".into(),
+        refdes: Some(refdes.into()),
+        value: None,
+        footprint_id: None,
+        refresh: false,
+        step: false,
+        replace: false,
+        strict: false,
+    })
+}
+
+#[test]
+fn library_makes_import_and_search_work_offline() {
+    let t = tempfile::tempdir().unwrap();
+    let lib = Library::at(&t.path().join("lib"));
+
+    // Board A has a network (the fixture source). Its downloads go to the library.
+    let mut a = Project::create(&t.path().join("a"), "a").unwrap();
+    a.set_source(std::sync::Arc::new(lamina_parts::DirSource {
+        dir: fixtures_parts(),
+    }));
+    a.set_library(lib.clone());
+    import_c6186(&mut a, "U1").unwrap();
+    assert!(lib.find("parts/C6186.json").is_some());
+    let m = a.data.footprints[&a.data.parts.parts["U1"].footprint]
+        .model
+        .clone()
+        .unwrap();
+    assert!(
+        lib.find(&format!("models/{}", m.file)).is_some(),
+        "{}",
+        m.file
+    );
+
+    // Board B has no network (an empty source folder) but the same library.
+    let mut b = Project::create(&t.path().join("b"), "b").unwrap();
+    b.set_source(std::sync::Arc::new(lamina_parts::DirSource {
+        dir: t.path().join("no-network"),
+    }));
+    b.set_library(lib.clone());
+    let r = import_c6186(&mut b, "U1").unwrap();
+    assert!(
+        r.notes.iter().any(|n| n.contains("came from the library")),
+        "{:?}",
+        r.notes
+    );
+    let m = b.data.footprints[&b.data.parts.parts["U1"].footprint]
+        .model
+        .clone()
+        .unwrap();
+    assert!(b.root().join("cache/models").join(&m.file).is_file());
+    assert!(b.root().join("cache/parts/C6186.json").is_file());
+
+    // The search falls back to the library and says so.
+    let s = b
+        .search_part(SearchPart {
+            query: "ams1117".into(),
+            limit: None,
+            basic_only: false,
+            in_stock: true,
+        })
+        .unwrap();
+    assert_eq!(s.hits.len(), 1, "{:?}", s.hits);
+    assert_eq!(s.hits[0].lcsc, "C6186");
+    assert!(s.note.is_some());
+    let e = b
+        .search_part(SearchPart {
+            query: "nothing-like-this".into(),
+            limit: None,
+            basic_only: false,
+            in_stock: true,
+        })
+        .unwrap_err();
+    assert!(e.to_string().contains("library"), "{e}");
+
+    // A part that is in neither place names the fetch command.
+    let e = b
+        .import_lcsc(ImportLcsc {
+            lcsc: "C14663".into(),
+            refdes: None,
+            value: None,
+            footprint_id: None,
+            refresh: false,
+            step: false,
+            replace: false,
+            strict: false,
+        })
+        .unwrap_err();
+    assert!(e.to_string().contains("lamina fetch C14663"), "{e}");
+}
+
+#[test]
+fn fetch_fills_the_library_without_a_project() {
+    let t = tempfile::tempdir().unwrap();
+    let lib = Library::at(&t.path().join("lib"));
+    let parts = lamina_parts::DirSource {
+        dir: fixtures_parts(),
+    };
+    let kicad_fixtures = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../lamina-kicad/tests/fixtures/footprints");
+    // A model folder with one STEP, in the KiCad layout.
+    let models = t.path().join("3d");
+    let shapes = models.join("Package_TO_SOT_SMD.3dshapes");
+    std::fs::create_dir_all(&shapes).unwrap();
+    let step = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../lamina-step/corpus/C25804.step");
+    std::fs::copy(&step, shapes.join("SOT-23.step")).unwrap();
+    let kicad = lamina_kicad::DirSource {
+        footprints: kicad_fixtures,
+        models,
+    };
+    let req = FetchLibrary {
+        lcsc: vec!["C6186".into(), "C999999".into()],
+        kicad: vec!["Package_TO_SOT_SMD:SOT-23".into(), "bad".into()],
+        refresh: false,
+    };
+    let sources = Sources {
+        parts: std::sync::Arc::new(parts),
+        footprints: std::sync::Arc::new(kicad),
+    };
+    let r = lamina_core::ops::library::fetch(&lib, &sources, &req).unwrap();
+    assert_eq!(r.done, vec!["C6186", "Package_TO_SOT_SMD:SOT-23"]);
+    assert_eq!(r.failed.len(), 2, "{:?}", r.failed);
+    assert!(
+        lib.find("kicad/footprints/Package_TO_SOT_SMD.pretty/SOT-23.kicad_mod")
+            .is_some()
+    );
+    assert!(
+        lib.find("kicad/models/Package_TO_SOT_SMD.3dshapes/SOT-23.step")
+            .is_some()
+    );
+    let r = lamina_core::ops::library::fetch(&lib, &sources, &req).unwrap();
+    assert_eq!(r.kept, vec!["C6186", "Package_TO_SOT_SMD:SOT-23"]);
+    let info = lamina_core::ops::library::library_info(&lib);
+    assert_eq!(info.parts, vec!["C6186"]);
+    assert_eq!(info.kicad_footprints, 1);
+
+    // A board without a network finds the KiCad footprint and the model in the library.
+    let mut b = Project::create(&t.path().join("b"), "b").unwrap();
+    b.set_library(lib.clone());
+    b.set_kicad_source(std::sync::Arc::new(lamina_kicad::DirSource {
+        footprints: t.path().join("no-network"),
+        models: t.path().join("no-network"),
+    }));
+    let hits = b
+        .search_kicad_footprints(SearchKicadFootprints {
+            query: "sot-23".into(),
+            limit: None,
+        })
+        .unwrap();
+    assert!(
+        hits.hits.iter().any(|h| h.name == "SOT-23"),
+        "{:?}",
+        hits.hits
+    );
+    let r = b
+        .import_kicad_footprint(ImportKicadFootprint {
+            footprint: "Package_TO_SOT_SMD:SOT-23".into(),
+            refdes: Some("Q1".into()),
+            value: None,
+            footprint_id: None,
+            model: true,
+            online: false,
+            replace: false,
+            strict: false,
+        })
+        .unwrap();
+    assert!(
+        r.notes.iter().any(|n| n.contains("3D model kicad/")),
+        "{:?}",
+        r.notes
+    );
+
+    // set_model with kicad: takes the generic model from the library too.
+    add_resistor(&mut b, "R1");
+    let r = b
+        .set_model(SetModel {
+            footprint: "R_0603".into(),
+            file: "kicad:Package_TO_SOT_SMD:SOT-23".into(),
+            offset: [0.0; 3],
+            rotation: [0.0; 3],
+        })
+        .unwrap();
+    assert!(r.summary.contains("model"), "{}", r.summary);
+    assert_eq!(
+        b.data.footprints["R_0603"].model.as_ref().unwrap().file,
+        "kicad/Package_TO_SOT_SMD/SOT-23.step"
     );
 }

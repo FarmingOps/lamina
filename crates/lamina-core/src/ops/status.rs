@@ -38,6 +38,8 @@ pub struct Status {
     /// The workspace root, if the board is in a workspace.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
+    /// The part library folder that gets new downloads.
+    pub library: String,
     /// Part groups (block instances) and their parts.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub groups: BTreeMap<String, Vec<String>>,
@@ -90,6 +92,7 @@ impl Project {
                 .map(|k| k.file_name().to_string())
                 .collect(),
             workspace: Workspace::find(self.root()).map(|w| w.root.display().to_string()),
+            library: self.library().store.display().to_string(),
             groups: d.parts.groups(),
         }
     }

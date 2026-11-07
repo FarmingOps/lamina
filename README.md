@@ -236,6 +236,26 @@ The MCP tools are `repeat_layout`, `save_layout_block` and `place_layout_block`.
 viewer, select a part of a group. Then use *Select group*, *layout like* or *Copy layout
 to all like it*.
 
+## Part library and offline work
+
+Each board keeps its own copy of every footprint and model in `cache/`. A clone of the
+board needs no network. New parts come from LCSC/EasyEDA or from the KiCad libraries, and
+each download also goes into the part library on your computer:
+
+- `$LAMINA_LIB`, or `%LOCALAPPDATA%\lamina\lib` on Windows, or `~/.lamina/lib`.
+- The `lib` folders of a workspace are searched first. Put shared parts there and commit them.
+
+`import_lcsc`, `import_kicad_footprint` and `set_model` look in the project cache, then in
+the library, then online. `search_part` uses the library when LCSC does not answer. To work
+without a network, fill the library first:
+
+```
+lamina fetch C6186 C14663 --kicad LED_SMD:LED_0603_1608Metric
+lamina library
+```
+
+The `fetch_library` and `library` tools do the same from an agent.
+
 ## KiCad files
 
 Lamina reads and writes KiCad files. You do not need KiCad.
@@ -243,9 +263,11 @@ Lamina reads and writes KiCad files. You do not need KiCad.
 - `import_kicad_footprint` imports a footprint. Give `Library:Name` (for example
   `Package_TO_SOT_SMD:SOT-23`), a name from a local library, or a `.kicad_mod` file.
   Lamina finds local libraries through `kicad_footprints` in `lamina.json`,
-  `KICAD*_FOOTPRINT_DIR` or a KiCad install. If there is no local library, Lamina downloads
-  the footprint and its STEP model from the official KiCad libraries.
-  `search_kicad_footprints` searches the local libraries.
+  `KICAD*_FOOTPRINT_DIR`, a KiCad install or the part library. If there is no local
+  library, Lamina downloads the footprint and its STEP model from the official KiCad
+  libraries and keeps a copy in the part library. `search_kicad_footprints` searches the
+  local libraries. `set_model` with `kicad:Library:Name` puts a generic KiCad model on any
+  footprint.
 - `import_kicad_board` and `lamina import-kicad <file> <dir>` import a `.kicad_pcb` from
   KiCad 6 to 10. Lamina imports the outline, footprints, parts, nets, placement, tracks,
   vias, zones, keep-outs and texts. The design rules and net classes come from the

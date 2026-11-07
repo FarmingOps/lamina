@@ -3,6 +3,7 @@ pub mod import;
 pub mod kicad;
 pub mod layout;
 pub mod lcsc;
+pub mod library;
 pub mod nets;
 pub mod output;
 pub mod parts;
@@ -19,7 +20,10 @@ pub use kicad::{
     SearchKicadFootprints,
 };
 pub use layout::{LayoutSaved, PlaceLayoutBlock, RepeatLayout, SaveLayoutBlock};
-pub use lcsc::{ImportEasyedaBoard, ImportLcsc, ImportMany, SearchPart, natural, today};
+pub use lcsc::{
+    ImportEasyedaBoard, ImportLcsc, ImportMany, PartSearch, SearchPart, natural, today,
+};
+pub use library::{FetchLibrary, Fetched, LibraryInfo, Sources};
 pub use nets::{Connect, Disconnect, SetNets};
 pub use output::{
     AddNote, Export, ExportStep, Exported, ImportGerbers, ListNotes, ResolveNotes, StepExported,

@@ -488,7 +488,8 @@ impl Lamina {
     }
     /// Search LCSC / JLCPCB parts by keyword, MPN or LCSC number. The results
     /// show the package, the stock, the price and if the part is a JLCPCB
-    /// basic part.
+    /// basic part. Without a network, the results come from the local part
+    /// library and the reply says so.
     #[tool(annotations(title = "Search parts", read_only_hint = true, open_world_hint = true))]
     async fn search_part(
         &self,
@@ -499,7 +500,8 @@ impl Lamina {
 
     /// Import an LCSC part. The tool converts its EasyEDA footprint, downloads
     /// the 3D model and caches all of it in the project. It can also add a
-    /// part.
+    /// part. The tool looks in the project cache and in the part library
+    /// before the network, and keeps a copy of each download in the library.
     #[tool(annotations(title = "Import LCSC part", open_world_hint = true))]
     async fn import_lcsc(
         &self,
@@ -795,8 +797,9 @@ impl Lamina {
         })
     }
     /// Use a different 3D model (STEP or OBJ) for a footprint, for example the
-    /// STEP file of the manufacturer. The reply includes the raw bounds of the
-    /// model. Use them to calculate the offset that puts the model on the
+    /// STEP file of the manufacturer, or `kicad:Library:Name` for a generic
+    /// model from the KiCad libraries. The reply includes the raw bounds of
+    /// the model. Use them to calculate the offset that puts the model on the
     /// centre of the pads.
     #[tool(annotations(title = "Set 3D model"))]
     async fn set_model(
@@ -804,6 +807,38 @@ impl Lamina {
         Parameters(p): Parameters<SetModel>,
     ) -> Result<CallToolResult, McpError> {
         self.with(|proj| proj.set_model(p))
+    }
+
+    /// Download LCSC parts and KiCad footprints, with their 3D models, into
+    /// the part library. Do this before you work without a network. The
+    /// library is `$LAMINA_LIB` or the `lamina/lib` folder of the user. The
+    /// tool works with or without an open project.
+    #[tool(annotations(title = "Fetch into library", open_world_hint = true))]
+    async fn fetch_library(
+        &self,
+        Parameters(p): Parameters<FetchLibrary>,
+    ) -> Result<CallToolResult, McpError> {
+        let guard = self.project.lock().unwrap_or_else(|p| p.into_inner());
+        let r = match guard.as_ref() {
+            Some(proj) => proj.fetch_library(p),
+            None => lamina_core::library::fetch(&model::Library::user(), &Sources::online(), &p),
+        };
+        Ok(match r {
+            Ok(v) => json_result(&v),
+            Err(e) => error_result(e),
+        })
+    }
+
+    /// The part library: its folders, the LCSC parts it has and the number
+    /// of KiCad footprints. The tool works with or without an open project.
+    #[tool(annotations(title = "Library info", read_only_hint = true))]
+    async fn library(&self) -> Result<CallToolResult, McpError> {
+        let guard = self.project.lock().unwrap_or_else(|p| p.into_inner());
+        let info = match guard.as_ref() {
+            Some(proj) => proj.library_info(),
+            None => lamina_core::library::library_info(&model::Library::user()),
+        };
+        Ok(json_result(&info))
     }
 }
 

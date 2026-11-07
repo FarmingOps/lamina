@@ -63,6 +63,9 @@ pub struct Project {
     checkers: Vec<Checker>,
     source: std::sync::Arc<dyn lamina_parts::PartSource>,
     kicad: std::sync::Arc<dyn lamina_kicad::KicadSource>,
+    /// The part library: downloads go there too, and imports look there
+    /// before the network.
+    library: Library,
     cached: Option<Vec<Violation>>,
     /// The size and the modification time of each project file at the last
     /// load or save. They show changes that another person or process made.
@@ -105,6 +108,7 @@ impl Project {
             checkers: Vec::new(),
             source: std::sync::Arc::new(lamina_parts::HttpSource::default()),
             kicad: std::sync::Arc::new(lamina_kicad::HttpSource),
+            library: Library::for_board(dir),
             cached: None,
             stamp: disk_stamp(dir),
             _lock: Some(lock),
@@ -131,6 +135,7 @@ impl Project {
             checkers: Vec::new(),
             source: std::sync::Arc::new(lamina_parts::HttpSource::default()),
             kicad: std::sync::Arc::new(lamina_kicad::HttpSource),
+            library: Library::for_board(dir),
             cached: None,
             stamp,
             _lock: None,
@@ -172,6 +177,24 @@ impl Project {
 
     pub fn set_kicad_source(&mut self, s: std::sync::Arc<dyn lamina_kicad::KicadSource>) {
         self.kicad = s;
+    }
+
+    /// The sources of this board, bundled for a fetch.
+    pub fn sources(&self) -> crate::library::Sources {
+        crate::library::Sources {
+            parts: self.source.clone(),
+            footprints: self.kicad.clone(),
+        }
+    }
+
+    /// The part library of this board.
+    pub fn library(&self) -> &Library {
+        &self.library
+    }
+
+    /// Use a different library (tests and offline mirrors).
+    pub fn set_library(&mut self, l: Library) {
+        self.library = l;
     }
 
     /// Add a checker that runs after each change (DRC adds its checker here).

@@ -10,6 +10,7 @@ pub mod footprint;
 pub mod geom;
 pub mod json;
 pub mod layer;
+pub mod library;
 pub mod project;
 pub mod sexpr;
 pub mod workspace;
@@ -19,6 +20,7 @@ pub use files::*;
 pub use footprint::*;
 pub use geom::*;
 pub use layer::*;
+pub use library::*;
 pub use project::*;
 pub use workspace::*;
 

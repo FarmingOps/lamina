@@ -93,32 +93,37 @@ pub struct KicadExported {
     pub zones: usize,
 }
 
-fn footprint_dirs(root: &Path) -> Vec<PathBuf> {
+/// KiCad footprint roots: `kicad_footprints` of the workspace, the KiCad
+/// installation, then the `kicad/footprints` folders of the part library.
+pub(crate) fn footprint_dirs(root: &Path, lib: &Library) -> Vec<PathBuf> {
     let mut v = Workspace::find(root)
         .map(|w| w.kicad_footprint_dirs())
         .unwrap_or_default();
     v.extend(library::env_footprint_dirs());
+    v.extend(lib.kicad_footprint_dirs());
     v
 }
 
-fn model_dirs(root: &Path) -> Vec<PathBuf> {
+/// KiCad model roots, in the same order as [`footprint_dirs`].
+pub(crate) fn model_dirs(root: &Path, lib: &Library) -> Vec<PathBuf> {
     let mut v = Workspace::find(root)
         .map(|w| w.kicad_model_dirs())
         .unwrap_or_default();
     v.extend(library::env_model_dirs());
+    v.extend(lib.kicad_model_dirs());
     v
 }
 
 impl Project {
     pub fn search_kicad_footprints(&self, p: SearchKicadFootprints) -> Result<KicadSearch> {
-        let dirs = footprint_dirs(self.root());
+        let dirs = footprint_dirs(self.root(), self.library());
         let libraries = library::pretty_libs(&dirs).len();
         let hits = library::search(&dirs, &p.query, p.limit.unwrap_or(20));
         let hint = if libraries == 0 {
             Some(
                 "There are no local KiCad libraries. Set kicad_footprints in lamina.json, \
                  or set KICAD9_FOOTPRINT_DIR. Also, import_kicad_footprint with `Library:Name` \
-                 downloads from the official online libraries."
+                 downloads from the official online libraries and keeps a copy in the part library."
                     .into(),
             )
         } else {
@@ -152,7 +157,7 @@ impl Project {
             || (!m.path.starts_with("${") && !Path::new(&m.path).is_absolute());
         let online = online && !in_project;
         if !dst.is_file() || in_project {
-            let mut roots = model_dirs(self.root());
+            let mut roots = model_dirs(self.root(), self.library());
             if in_project {
                 roots = project_dir.map(Path::to_path_buf).into_iter().collect();
             }
@@ -199,6 +204,7 @@ impl Project {
                             notes.push(format!("The model file was not saved: {e}"));
                             return None;
                         }
+                        let _ = self.library().put(&kicad_model_rel(&lib, &name), &bytes);
                     }
                     Err(e) => {
                         notes.push(format!("3D model not downloaded: {e}"));
@@ -273,7 +279,8 @@ impl Project {
                 .unwrap_or_default();
             let text = std::fs::read_to_string(as_path).map_err(|e| Error::io(as_path, e))?;
             (text, lib, spec.replace('\\', "/"))
-        } else if let Some(hit) = library::find(&footprint_dirs(self.root()), spec) {
+        } else if let Some(hit) = library::find(&footprint_dirs(self.root(), self.library()), spec)
+        {
             let text = std::fs::read_to_string(&hit.path)
                 .map_err(|e| Error::io(Path::new(&hit.path), e))?;
             (text, hit.library, hit.path)
@@ -284,10 +291,15 @@ impl Project {
                      Give `Library:Name` to download it from the online libraries."
                 ))
             })?;
-            let text = self
-                .kicad_source()
-                .footprint(lib, name)
-                .map_err(|e| Error::invalid(format!("{spec}: {e}")))?;
+            let text = self.kicad_source().footprint(lib, name).map_err(|e| {
+                Error::invalid(format!(
+                    "{spec}: {e}. Run `lamina fetch --kicad {spec}` on a computer with a \
+                     network to put it in the library."
+                ))
+            })?;
+            let _ = self
+                .library()
+                .put(&kicad_footprint_rel(lib, name), text.as_bytes());
             (
                 text,
                 lib.to_string(),

@@ -211,13 +211,13 @@ pub fn layout_dirs(board: &Path) -> Vec<PathBuf> {
 pub const LAYOUT_DIR: &str = "layouts";
 
 /// Finds a model file for a board: the cache of the board first, then the
-/// workspace libraries.
+/// `models` folders of the workspace libraries and of the user library.
 pub fn find_model(board: &Path, rel: &str) -> Option<PathBuf> {
     let own = board.join(crate::project::MODEL_DIR).join(rel);
     if own.is_file() {
         return Some(own);
     }
-    Workspace::find(board)?
+    crate::library::Library::for_board(board)
         .model_dirs()
         .into_iter()
         .map(|d| d.join(rel))

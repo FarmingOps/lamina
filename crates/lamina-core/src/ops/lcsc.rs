@@ -28,6 +28,14 @@ fn yes() -> bool {
     true
 }
 
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct PartSearch {
+    pub hits: Vec<PartHit>,
+    /// Set when the results come from the local library, not from LCSC.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ImportLcsc {
     /// The LCSC number, for example `C6186`.
@@ -85,38 +93,79 @@ fn read_cached(path: &Path) -> Option<String> {
 }
 
 impl Project {
-    pub fn search_part(&self, p: SearchPart) -> Result<Vec<PartHit>> {
+    pub fn search_part(&self, p: SearchPart) -> Result<PartSearch> {
         if p.query.trim().is_empty() {
             return Err(Error::invalid(
                 "The query is empty. Give one or more keywords.",
             ));
         }
         let limit = p.limit.unwrap_or(10).clamp(1, 50);
-        let mut hits = self
-            .source()
-            .search(p.query.trim(), limit * 2)
-            .map_err(Error::Invalid)?;
+        let (mut hits, note) = match self.source().search(p.query.trim(), limit * 2) {
+            Ok(h) => (h, None),
+            Err(e) => {
+                // No network: search the parts that the library has.
+                let local = crate::library::search_library(self.library(), p.query.trim());
+                if local.is_empty() {
+                    return Err(Error::Invalid(format!(
+                        "{e}. The local library has no part that matches."
+                    )));
+                }
+                let note = format!(
+                    "LCSC did not answer ({e}). These results come from the local library. \
+                     The stock and the price are not known."
+                );
+                (local, Some(note))
+            }
+        };
         if p.basic_only {
             hits.retain(|h| h.basic);
         }
-        if p.in_stock {
+        if p.in_stock && note.is_none() {
             hits.retain(|h| h.stock > 0);
         }
         hits.truncate(limit);
-        Ok(hits)
+        Ok(PartSearch { hits, note })
     }
 
     pub fn import_lcsc(&mut self, p: ImportLcsc) -> Result<OpResult> {
         let lcsc = p.lcsc.trim().to_ascii_uppercase();
         let root = self.root().to_path_buf();
         let cache = root.join(PARTS_DIR).join(format!("{lcsc}.json"));
-        let raw: serde_json::Value = match (!p.refresh).then(|| read_cached(&cache)).flatten() {
-            Some(t) => serde_json::from_str(&t)
-                .map_err(|e| Error::invalid(format!("{}: {e}", cache.display())))?,
+        let lib_rel = part_rel(&lcsc);
+        let cached = (!p.refresh)
+            .then(|| read_cached(&cache))
+            .flatten()
+            .map(|t| (t, None))
+            .or_else(|| {
+                // Not in the project: use the library before the network.
+                (!p.refresh)
+                    .then(|| self.library().find(&lib_rel))
+                    .flatten()
+                    .and_then(|path| read_cached(&path).map(|t| (t, Some(path))))
+            });
+        let mut lib_note = None;
+        let raw: serde_json::Value = match cached {
+            Some((t, from)) => {
+                let v = serde_json::from_str(&t)
+                    .map_err(|e| Error::invalid(format!("{}: {e}", cache.display())))?;
+                if let Some(path) = from {
+                    write_atomic(&cache, t.as_bytes())?;
+                    lib_note = Some(format!("{lcsc} came from the library ({})", path.display()));
+                }
+                v
+            }
             None => {
-                let v = self.source().component(&lcsc).map_err(Error::Invalid)?;
+                let v = self.source().component(&lcsc).map_err(|e| {
+                    Error::Invalid(format!(
+                        "{e}. {lcsc} is not in the project cache or in the library. \
+                         Run `lamina fetch {lcsc}` on a computer with a network to put it in the library."
+                    ))
+                })?;
                 let text = serde_json::to_string(&v).map_err(|e| Error::invalid(e.to_string()))?;
                 write_atomic(&cache, text.as_bytes())?;
+                if let Err(e) = self.library().put(&lib_rel, text.as_bytes()) {
+                    lib_note = Some(format!("The library did not get a copy: {e}"));
+                }
                 v
             }
         };
@@ -125,6 +174,7 @@ impl Project {
             im.footprint.id = id.clone();
         }
         let mut notes = im.notes.clone();
+        notes.extend(lib_note);
         let mut d = self.data.clone();
         let mut touched = Touched::default();
         let fp_id = im.footprint.id.clone();
@@ -270,20 +320,36 @@ impl Project {
         let root = self.root().to_path_buf();
         let rel_obj = format!("lcsc/{}.obj", info.uuid);
         let obj_path = root.join(MODEL_DIR).join(&rel_obj);
+        let lib = self.library();
+        let lib_obj = format!("models/{rel_obj}");
         let obj = match (!refresh).then(|| read_cached(&obj_path)).flatten() {
             Some(t) => t,
-            None => match self.source().model_obj(&info.uuid) {
-                Ok(t) => {
+            None => match (!refresh)
+                .then(|| lib.find(&lib_obj))
+                .flatten()
+                .and_then(|p| read_cached(&p))
+            {
+                Some(t) => {
                     if let Err(e) = write_atomic(&obj_path, t.as_bytes()) {
                         notes.push(format!("The 3D model was not saved: {e}"));
                         return None;
                     }
                     t
                 }
-                Err(e) => {
-                    notes.push(format!("The 3D model was not downloaded: {e}"));
-                    return None;
-                }
+                None => match self.source().model_obj(&info.uuid) {
+                    Ok(t) => {
+                        if let Err(e) = write_atomic(&obj_path, t.as_bytes()) {
+                            notes.push(format!("The 3D model was not saved: {e}"));
+                            return None;
+                        }
+                        let _ = lib.put(&lib_obj, t.as_bytes());
+                        t
+                    }
+                    Err(e) => {
+                        notes.push(format!("The 3D model was not downloaded: {e}"));
+                        return None;
+                    }
+                },
             },
         };
         let mut model = lamina_parts::model_ref(info, &obj, rel_obj);
@@ -292,14 +358,27 @@ impl Project {
         if step {
             let rel_step = format!("lcsc/{}.step", info.uuid);
             let step_path = root.join(MODEL_DIR).join(&rel_step);
+            let lib_step = format!("models/{rel_step}");
             if refresh || !step_path.exists() {
-                match self.source().model_step(&info.uuid) {
-                    Ok(b) => {
-                        if let Err(e) = write_atomic(&step_path, &b) {
-                            notes.push(format!("The STEP file was not saved: {e}"));
+                let from_lib = (!refresh).then(|| lib.find(&lib_step)).flatten();
+                match from_lib {
+                    Some(src) => {
+                        if let Some(parent) = step_path.parent() {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        if let Err(e) = std::fs::copy(&src, &step_path) {
+                            notes.push(format!("The STEP file was not copied: {e}"));
                         }
                     }
-                    Err(e) => notes.push(format!("The STEP file was not downloaded: {e}")),
+                    None => match self.source().model_step(&info.uuid) {
+                        Ok(b) => {
+                            if let Err(e) = write_atomic(&step_path, &b) {
+                                notes.push(format!("The STEP file was not saved: {e}"));
+                            }
+                            let _ = lib.put(&lib_step, &b);
+                        }
+                        Err(e) => notes.push(format!("The STEP file was not downloaded: {e}")),
+                    },
                 }
             }
             // The STEP file has the same geometry in the same frame, but with

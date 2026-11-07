@@ -150,6 +150,20 @@ enum Cmd {
         #[arg(long)]
         name: Option<String>,
     },
+    /// Download LCSC parts and KiCad footprints into the part library, so
+    /// that boards can import them without a network.
+    Fetch {
+        /// LCSC numbers, for example C6186.
+        lcsc: Vec<String>,
+        /// KiCad footprints as Library:Name.
+        #[arg(long)]
+        kicad: Vec<String>,
+        /// Download again, also when the library has the files.
+        #[arg(long)]
+        refresh: bool,
+    },
+    /// Print the part library folders and contents as JSON.
+    Library,
     /// Print the project status as JSON.
     Status { dir: PathBuf },
     /// List the rule violations as JSON.
@@ -367,6 +381,32 @@ fn main() -> anyhow::Result<()> {
             });
             let ws = lamina_core::model::Workspace::create(&dir, &name)?;
             println!("{}", serde_json::to_string_pretty(&ws.file)?);
+            Ok(())
+        }
+        Cmd::Fetch {
+            lcsc,
+            kicad,
+            refresh,
+        } => {
+            let r = lamina_core::library::fetch(
+                &lamina_core::model::Library::user(),
+                &lamina_core::Sources::online(),
+                &lamina_core::FetchLibrary {
+                    lcsc,
+                    kicad,
+                    refresh,
+                },
+            )?;
+            println!("{}", serde_json::to_string_pretty(&r)?);
+            if r.failed.is_empty() {
+                Ok(())
+            } else {
+                anyhow::bail!("{} item(s) failed", r.failed.len())
+            }
+        }
+        Cmd::Library => {
+            let info = lamina_core::library::library_info(&lamina_core::model::Library::user());
+            println!("{}", serde_json::to_string_pretty(&info)?);
             Ok(())
         }
         Cmd::Status { dir } => {
