@@ -50,6 +50,11 @@ pub struct Render {
     /// 3D view: draw only these parts (refdes).
     #[serde(default)]
     pub only: Option<Vec<String>>,
+    /// 3D view with `focus` or `region`: draw only the parts inside the frame
+    /// (default true). Set false to keep the parts around it, which can hide
+    /// the view.
+    #[serde(default)]
+    pub clip: Option<bool>,
     /// Image width in pixels (default 1400).
     #[serde(default)]
     pub width: Option<u32>,
@@ -110,8 +115,22 @@ impl Project {
         let h = p.height.unwrap_or(1000).clamp(64, 4096);
         let (_, s2, mut s3) = lamina_scene::build(&self.data, self.root());
         let mut notes = Vec::new();
+        let frame = self.frame_3d(p.region.as_ref(), p.focus.as_ref())?;
         if p.view == RenderView::View3D {
             notes.extend(self.filter_instances(&mut s3, p.hide.as_deref(), p.only.as_deref())?);
+            if let Some((lo, hi)) = frame.filter(|_| p.clip.unwrap_or(true)) {
+                let before = s3.instances.len();
+                s3.instances.retain(|i| {
+                    let (x, y) = (i.transform[12], i.transform[13]);
+                    x >= lo[0] && x <= hi[0] && y >= lo[1] && y <= hi[1]
+                });
+                let n = before - s3.instances.len();
+                if n > 0 {
+                    notes.push(format!(
+                        "{n} part(s) outside the frame are not drawn. Set clip: false to draw them."
+                    ));
+                }
+            }
         }
         let layers = match &p.layers {
             None => None,
@@ -134,7 +153,7 @@ impl Project {
             RenderView::View3D => Snapshot::View3D {
                 yaw: p.yaw.unwrap_or(-62.0),
                 pitch: p.pitch.unwrap_or(38.0).clamp(-89.9, 90.0),
-                frame: self.frame_3d(p.region.as_ref(), p.focus.as_ref())?,
+                frame,
                 zoom: p.zoom.unwrap_or(1.0),
             },
         };
