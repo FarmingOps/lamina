@@ -29,6 +29,8 @@ pub fn standard(board: Option<&Path>) -> Ports {
                 fp_dirs, m_dirs,
             )),
         ],
+        renderer: Some(Arc::new(lamina_render::PngRenderer)),
+        source: Some(Arc::new(lamina_build::JsonnetSource)),
         ..Ports::default()
     }
 }

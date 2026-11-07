@@ -888,3 +888,67 @@ fn fetch_fills_the_library_without_a_project() {
     let ids: Vec<String> = providers.infos().into_iter().map(|i| i.id).collect();
     assert_eq!(ids, vec!["lcsc", "kicad"]);
 }
+
+/// A renderer that draws nothing: it returns a fixed PNG and one note.
+struct FakeRenderer;
+
+impl lamina_core::ports::render::Renderer for FakeRenderer {
+    fn snapshot(
+        &self,
+        _s2: &lamina_scene::Scene2D,
+        _s3: &lamina_scene::Scene3D,
+        _kind: lamina_core::ports::render::Snapshot,
+        _width: u32,
+        _height: u32,
+        _opts2d: Option<&lamina_core::ports::render::Options2D>,
+    ) -> std::result::Result<(Vec<u8>, Vec<String>), String> {
+        Ok((b"PNG-FAKE".to_vec(), vec!["fake renderer".to_string()]))
+    }
+}
+
+#[test]
+fn render_goes_through_the_renderer_port() {
+    let (_t, mut p) = new_project();
+    add_resistor(&mut p, "R1");
+    p.set_ports(Ports {
+        renderer: Some(std::sync::Arc::new(FakeRenderer)),
+        ..p.ports().clone()
+    });
+    let r = p
+        .render(Render {
+            name: Some("test".into()),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(r.png, b"PNG-FAKE");
+    assert_eq!(r.notes, vec!["fake renderer".to_string()]);
+    assert_eq!(std::fs::read(&r.path).unwrap(), b"PNG-FAKE");
+
+    // Without a renderer, the operation says so.
+    p.set_ports(Ports {
+        renderer: None,
+        ..p.ports().clone()
+    });
+    let e = p.render(Render::default()).unwrap_err().to_string();
+    assert!(e.contains("No renderer is plugged in"), "{e}");
+}
+
+#[test]
+fn a_board_without_a_design_source_port() {
+    let (_t, mut p) = new_project();
+    p.set_ports(Ports {
+        source: None,
+        ..p.ports().clone()
+    });
+    let s = p.status();
+    assert_eq!(s.source, None);
+    assert!(s.generated.is_empty());
+    assert_eq!(p.source_name(), None);
+    let e = p.build().unwrap_err().to_string();
+    assert!(e.contains("No design source is plugged in"), "{e}");
+    let e = p.init_source().unwrap_err().to_string();
+    assert!(e.contains("No design source is plugged in"), "{e}");
+    // Reload and sync do not need a source.
+    p.reload().unwrap();
+    assert!(!p.sync().unwrap());
+}

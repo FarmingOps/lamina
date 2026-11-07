@@ -503,7 +503,7 @@ impl Project {
         );
         let default_value = info.mpn.clone().unwrap_or_else(|| fp_id.clone());
 
-        let parts_generated = lamina_build::owned(self.root()).contains(&FileKind::Parts);
+        let parts_generated = self.source_owned().contains(&FileKind::Parts);
         if let (Some(r), true) = (p.refdes.as_deref(), parts_generated) {
             let q = |s: &str| s.replace('\\', "\\\\").replace('\'', "\\'");
             let mut fields = vec![format!("footprint: '{}'", q(&fp_id))];
@@ -522,7 +522,7 @@ impl Project {
             }
             notes.push(format!(
                 "parts.json is generated from {}. Add the part there: {r}: {{ {} }}",
-                lamina_build::SOURCE_FILE,
+                self.source_name().unwrap_or("the design source"),
                 fields.join(", ")
             ));
             summary = format!("{r} not added (see notes): {summary}");
