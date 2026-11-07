@@ -32,6 +32,8 @@ pub fn standard(board: Option<&Path>) -> Ports {
         fabricators: vec![Arc::new(lamina_export::GerberFabricator)],
         step: Some(Arc::new(lamina_export::StepExporter)),
         meshes: Some(Arc::new(lamina_step::FileMeshLoader)),
+        renderer: Some(Arc::new(lamina_render::PngRenderer)),
+        source: Some(Arc::new(lamina_build::JsonnetSource)),
         ..Ports::default()
     }
 }

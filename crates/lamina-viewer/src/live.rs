@@ -20,7 +20,7 @@ pub struct Loaded {
     pub changed: Vec<Rect>,
     /// Model files that changed on disk.
     pub models_changed: bool,
-    /// Files that `design.jsonnet` generates. The editor does not change them.
+    /// Files that the design source generates. The editor does not change them.
     pub generated: Vec<String>,
 }
 
@@ -122,11 +122,16 @@ fn worker(root: PathBuf, ev: Receiver<(bool, bool)>, tx: Sender<Msg>, wake: impl
 
 fn build(root: &Path, prev: Option<&ProjectData>, models_changed: bool) -> Result<Loaded, String> {
     // Build a changed design source first. Its errors look like compile errors.
-    lamina_build::ensure_built(root).map_err(|e| e.to_string())?;
-    let generated: Vec<String> = lamina_build::owned(root)
-        .iter()
-        .map(|k| k.file_name().to_string())
-        .collect();
+    let ports = lamina_core::wiring::standard(Some(root));
+    let mut generated: Vec<String> = Vec::new();
+    if let Some(src) = &ports.source {
+        src.ensure_built(root).map_err(|e| e.to_string())?;
+        generated = src
+            .owned(root)
+            .iter()
+            .map(|k| k.file_name().to_string())
+            .collect();
+    }
     let mut last = String::new();
     for _ in 0..5 {
         match ProjectData::load(root) {

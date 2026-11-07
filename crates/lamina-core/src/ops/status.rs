@@ -84,8 +84,7 @@ impl Project {
             errors,
             warnings: v.len() - errors,
             by_rule,
-            source: lamina_build::has_source(self.root())
-                .then(|| lamina_build::SOURCE_FILE.to_string()),
+            source: self.source_file(),
             generated: self
                 .source_owned()
                 .iter()

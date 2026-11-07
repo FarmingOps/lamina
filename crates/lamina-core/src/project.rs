@@ -10,6 +10,16 @@ use serde::Serialize;
 
 use crate::lock::Lock;
 use lamina_ports::Ports;
+use lamina_ports::source::{DesignSource, Report};
+
+/// Build the design source if it changed. Returns true if something was
+/// built. A board without a design source port is never built.
+fn ensure_built(ports: &Ports, root: &Path) -> Result<bool> {
+    match &ports.source {
+        Some(s) => Ok(s.ensure_built(root)?.is_some()),
+        None => Ok(false),
+    }
+}
 
 /// What an operation did. The agent gets this as JSON.
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -148,7 +158,7 @@ impl Project {
 
     /// Like [`Project::open_shared`], with the given ports.
     pub fn open_shared_with(dir: &Path, ports: Ports) -> Result<Project> {
-        lamina_build::ensure_built(dir)?;
+        ensure_built(&ports, dir)?;
         let stamp = disk_stamp(dir);
         let data = ProjectData::load(dir)?;
         Ok(Project {
@@ -169,7 +179,7 @@ impl Project {
     /// Reload if the files on disk changed after the last load or save.
     /// Returns true if something was reloaded.
     pub fn sync(&mut self) -> Result<bool> {
-        let built = lamina_build::ensure_built(&self.root)?.is_some();
+        let built = ensure_built(&self.ports, &self.root)?;
         let now = disk_stamp(&self.root);
         if now == self.stamp && !built {
             return Ok(false);
@@ -271,7 +281,7 @@ impl Project {
 
     /// Read all data from disk again (for example, after the user edited files).
     pub fn reload(&mut self) -> Result<()> {
-        lamina_build::ensure_built(&self.root)?;
+        ensure_built(&self.ports, &self.root)?;
         self.stamp = disk_stamp(&self.root);
         self.data = ProjectData::load(&self.root)?;
         self.cached = None;
@@ -314,7 +324,7 @@ impl Project {
                 )));
             }
         }
-        let owned = lamina_build::owned(&self.root);
+        let owned = self.source_owned();
         let clash: Vec<&str> = touched
             .files
             .iter()
@@ -327,7 +337,7 @@ impl Project {
                  Lamina rebuilds the files automatically.",
                 clash.join(" and "),
                 if clash.len() == 1 { "is" } else { "are" },
-                lamina_build::SOURCE_FILE
+                self.source_name().unwrap_or("the design source")
             )));
         }
         let fixed: Vec<String> = before
@@ -367,29 +377,54 @@ impl Project {
         })
     }
 
+    /// The design source port, or an invalid-input error if none is plugged in.
+    fn design_source(&self) -> Result<&dyn DesignSource> {
+        self.ports
+            .source
+            .as_deref()
+            .ok_or_else(|| Error::invalid(Ports::missing("design source")))
+    }
+
     /// Build the design source and reload.
-    pub fn build(&mut self) -> Result<lamina_build::Report> {
-        let r = lamina_build::build(&self.root)?;
+    pub fn build(&mut self) -> Result<Report> {
+        let r = self.design_source()?.build(&self.root)?;
         self.reload()?;
         Ok(r)
     }
 
-    /// Write a starter `design.jsonnet` for a new board (if there is no source
+    /// Write a starter design source for a new board (if there is no source
     /// file) and build it.
-    pub fn init_source(&mut self) -> Result<lamina_build::Report> {
-        let src = lamina_build::source_path(&self.root);
-        if !src.is_file() {
-            write_atomic(
-                &src,
-                lamina_build::template(&self.data.board.name).as_bytes(),
-            )?;
+    pub fn init_source(&mut self) -> Result<Report> {
+        let src = self.design_source()?;
+        let path = src.source_path(&self.root);
+        if !path.is_file() {
+            write_atomic(&path, src.template(&self.data.board.name).as_bytes())?;
         }
         self.build()
     }
 
+    /// The file name of the design source, for example `design.jsonnet`, if
+    /// a design source is plugged in. The file itself can be absent.
+    pub fn source_name(&self) -> Option<&str> {
+        self.ports.source.as_deref().map(|s| s.file_name())
+    }
+
+    /// The file name of the design source, if the board has one.
+    pub fn source_file(&self) -> Option<String> {
+        self.ports
+            .source
+            .as_deref()
+            .filter(|s| s.has_source(&self.root))
+            .map(|s| s.file_name().to_string())
+    }
+
     /// The files that the design source generates. Direct edits must not change them.
     pub fn source_owned(&self) -> BTreeSet<FileKind> {
-        lamina_build::owned(&self.root)
+        self.ports
+            .source
+            .as_deref()
+            .map(|s| s.owned(&self.root))
+            .unwrap_or_default()
     }
 
     /// Make `new` the project state. Write only the files that are different.

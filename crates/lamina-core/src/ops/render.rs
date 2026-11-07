@@ -1,6 +1,7 @@
 use lamina_model::error::Result;
 use lamina_model::*;
-use lamina_render::{Snapshot, raster::Options2D};
+use lamina_ports::Ports;
+use lamina_ports::render::{Options2D, Snapshot};
 use lamina_scene::SceneLayer;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -163,8 +164,14 @@ impl Project {
             layers,
             region: p.region,
         };
-        let (png, problems) =
-            lamina_render::snapshot(&s2, &s3, kind, w, h, Some(&opts)).map_err(Error::Invalid)?;
+        let renderer = self
+            .ports
+            .renderer
+            .as_deref()
+            .ok_or_else(|| Error::invalid(Ports::missing("renderer")))?;
+        let (png, problems) = renderer
+            .snapshot(&s2, &s3, kind, w, h, Some(&opts))
+            .map_err(Error::Invalid)?;
         let name = p.name.unwrap_or_else(|| {
             match p.view {
                 RenderView::Layers => "layers",

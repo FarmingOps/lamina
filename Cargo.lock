@@ -2799,7 +2799,6 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "embed-resource",
- "lamina-build",
  "lamina-core",
  "lamina-drc",
  "lamina-geom",

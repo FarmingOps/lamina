@@ -2,10 +2,12 @@
 //! 3D and the live viewer.
 
 pub mod gpu;
+pub mod port;
 pub mod raster;
 pub mod tess;
 
 pub use gpu::{Camera, Gpu, Gpu2D, Gpu3D, MeshCache, Target};
+pub use port::PngRenderer;
 
 use lamina_scene::{Scene2D, Scene3D};
 

@@ -59,6 +59,9 @@ pub struct Input {
 
 pub use lamina_ports::source::Report;
 
+pub mod port;
+pub use port::JsonnetSource;
+
 pub fn source_path(root: &Path) -> PathBuf {
     root.join(SOURCE_FILE)
 }
